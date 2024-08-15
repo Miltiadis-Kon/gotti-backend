@@ -4,10 +4,8 @@ django
 requests
 django-cors-headers
 python-decouple
-
 # for stock data 
 yfinance
-
 # for stock evaluation packages
 stock-indicators
 numpy
