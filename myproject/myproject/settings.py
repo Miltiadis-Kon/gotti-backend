@@ -28,6 +28,13 @@ DEBUG = True
 ALLOWED_HOSTS = [
 ]
 
+# myproject/settings.py
+from decouple import config
+
+APCA_API_KEY_ID = config('APCA_API_KEY_ID')
+APCA_API_SECRET_KEY = config('APCA_API_SECRET_KEY')
+
+
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
 ]
