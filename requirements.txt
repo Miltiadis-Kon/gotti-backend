@@ -11,3 +11,9 @@ stock-indicators
 numpy
 pandas
 mplfinance
+# for scraping
+snscrape
+# for mongodb
+pymongo
+
+
