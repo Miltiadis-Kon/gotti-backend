@@ -16,4 +16,5 @@ snscrape
 # for mongodb
 pymongo
 
-
+# for backtesting
+backtrader
