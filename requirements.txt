@@ -1,0 +1,5 @@
+fastapi[standard]
+alpaca-py
+pydantic
+uvicorn
+mysql-connector-python
