@@ -16,12 +16,12 @@ data = get_ticker('AAPL', '1d', '1m')
 
 import mplfinance as mpf
 # Inspect the DataFrame structure
-#print(data.columns)
-#print(data.head())
+print(data.columns)
+print(data.head())
 
 # Plot the candlestick chart
 
-#mpf.plot(data, type='candle', style='charles', title='Candlestick Chart', ylabel='Price')
+mpf.plot(data, type='candle', style='charles', title='Candlestick Chart', ylabel='Price')
 
 # Suppose that you have dataframe like the below.
 #             date    open    high     low   close     volume

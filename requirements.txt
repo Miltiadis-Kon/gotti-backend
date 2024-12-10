@@ -18,3 +18,8 @@ pymongo
 
 # for backtesting
 backtrader
+
+#hugface data 
+huggingface_hub
+transformers
+datasets
