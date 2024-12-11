@@ -1,4 +1,4 @@
-fastapi[standard]
+fastapi
 alpaca-py
 pydantic
 uvicorn
