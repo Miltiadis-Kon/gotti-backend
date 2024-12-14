@@ -226,7 +226,7 @@ def add_order_sql_from_apca(data):
 
         conn.commit()
         print("Order added to db!")
-        return data['order_id'], 200
+        return data, 200
 
     except mysql.connector.Error as err:
         print(f"Error: {err}")
@@ -273,7 +273,7 @@ def update_order_sql(order):
         ))
 
         conn.commit()
-        return {"message": "Order updated successfully"}, 200
+        return order, 200
 
     except mysql.connector.Error as err:
         print(f"Error: {err}")

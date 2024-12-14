@@ -5,6 +5,7 @@ import api.orders as od
 import api.account as ac
 import api.positions as ps
 import api.strategies as st
+import telegram_handler as tg
 
 
 app = FastAPI()
@@ -71,6 +72,8 @@ def update_order_sql(message:bytes):
     data = od.format_order_data(message)
     print(data)
     order = od.update_order_sql(data)
+    if  order['status'] == 'new' : 
+        tg.send_message(order)
     return order
 
 @app.get('/get_order_sql')
@@ -132,7 +135,7 @@ def enable_strategy(strategy_name:str):
 
 #region Websockets
 import asyncio
-from telegram import Bot
+from telegram_handler import Bot
 import websockets
 import uvicorn
 
@@ -155,9 +158,7 @@ async def listen():
         once = False
         try:
             async for message in websocket:
-                #bot = Bot(token="7924089058:AAHfnR2vcgBq3LRyKVKu4XdqfRu0ofQMI40")
-                #await bot.send_message(chat_id=8139983484, text=f"New Order: {message}")
-                
+
                 await update_order_sql(message) # Update order in database
 
                 print(f"Received message: {message}")
