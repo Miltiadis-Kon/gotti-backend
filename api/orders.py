@@ -172,62 +172,47 @@ def get_order_profit_loss(client_order_id):
         
         return ({"profit_loss": profit_loss}), 200
 
-#TODO Test the following function
-def add_order_sql(order_id,strategy,asset):
-    """ Add order to database.
-    
-        Will only include strategy and order ID.
-        Other info will be added from the Alpaca webhook.
-    """
-    try:
-        conn = sql.connect()
-        cursor = conn.cursor()
-        #TODO: FIX Error: 1364 (HY000): Field 'symbol' doesn't have a default value
-        cursor.execute("INSERT INTO orders (order_id, strategy,asset) VALUES (%s, %s,%s)", (order_id, strategy,asset))
-        conn.commit()
-        print(" Order added to db!")
-        return order_id,200
-    except mysql.connector.Error as err:
-        print(f"Error: {err}")
-    except Exception as e:
-        print(f"Unexpected error: {e}")
-    finally:
-        cursor.close()
-        conn.close()
+# Function to parse and format datetime strings
+def parse_datetime(dt_str):
+    return datetime.strptime(dt_str[:26], '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y-%m-%d %H:%M:%S')
 
 
-def add_order_sql_from_apca(data):
+
+def add_order_sql_from_apca(order):
     """ Add order to database.
         All info are added from the Alpaca webhook.
     """
     try:
         conn = sql.connect()
         cursor = conn.cursor()
-
+        # Ensure all keys are present in the order dictionary
+        order_data = {
+            "order_id": order.get("order_id"),
+            "client_order_id": order.get("client_order_id"),
+            "created_at": parse_datetime(order.get("created_at")),
+            "submitted_at": parse_datetime(order.get("submitted_at")),
+            "symbol": order.get("symbol"),
+            "qty": order.get("qty"),
+            "filled_avg_price": order.get("filled_avg_price"),
+            "type": order.get("type"),
+            "side": order.get("side"),
+            "limit_price": order.get("limit_price"),
+            "stop_price": order.get("stop_price"),
+            "status": order.get("status"),
+            "trail_percent": order.get("trail_percent"),
+            "trail_price": order.get("trail_price"),
+            "strategy": "N/A"
+        }
         # Insert the order into the database
-        cursor.execute("""
-            INSERT INTO orders (
-                id, client_order_id, created_at, updated_at, submitted_at, filled_at, expired_at, canceled_at,
-                failed_at, replaced_at, replaced_by, replaces, asset_id, symbol, asset_class, notional, qty,
-                filled_qty, filled_avg_price, order_class, order_type, type, side, position_intent, time_in_force,
-                limit_price, stop_price, status, extended_hours, legs, trail_percent, trail_price, hwm, subtag,
-                source, expires_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                      %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, (
-            data['order_id'], data['client_order_id'], data['created_at'], data['updated_at'], data['submitted_at'],
-            data['filled_at'], data['expired_at'], data['canceled_at'], data['failed_at'], data['replaced_at'],
-            data['replaced_by'], data['replaces'], data['asset_id'], data['symbol'], data['asset_class'], data['notional'],
-            data['qty'], data['filled_qty'], data['filled_avg_price'], data['order_class'], data['order_type'], data['type'],
-            data['side'], data['position_intent'], data['time_in_force'], data['limit_price'], data['stop_price'],
-            data['status'], data['extended_hours'], data['legs'], data['trail_percent'], data['trail_price'], data['hwm'],
-            data['subtag'], data['source'], data['expires_at']
-        ))
-
+        cursor.execute("INSERT INTO orders VALUES ( %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,%s, %s, %s, %s,%s) ", (
+            order_data['order_id'], order_data['client_order_id'], order_data['created_at'], order_data['submitted_at'],
+            order_data['symbol'], order_data['qty'], order_data['filled_avg_price'], order_data['type'],
+            order_data['side'], order_data['limit_price'], order_data['stop_price'], order_data['status'],
+            order_data['trail_percent'], order_data['trail_price'], order_data['strategy']
+        )) 
         conn.commit()
         print("Order added to db!")
-        return data, 200
-
+        return order, 200
     except mysql.connector.Error as err:
         print(f"Error: {err}")
         return {"error": str(err)}, 500
@@ -237,8 +222,6 @@ def add_order_sql_from_apca(data):
     finally:
         cursor.close()
         conn.close()
-
-
 #TODO Test the following function
 def update_order_sql(order):
     """ Update order in database.
@@ -247,31 +230,16 @@ def update_order_sql(order):
     try:
         conn = sql.connect()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM orders WHERE id = %s", (order['order_id'],))
+        cursor.execute("SELECT * FROM orders WHERE order_id = %s", (order['order_id'],))
         existing_order = cursor.fetchone()
         if existing_order is None:
             print(f"There is no associated orded with the following id{order['order_id']}...\n Creating new order! ")
             return add_order_sql_from_apca(order)
-        cursor.execute("""
-            UPDATE orders
-            SET client_order_id = %s, created_at = %s, updated_at = %s, submitted_at = %s, filled_at = %s,
-            expired_at = %s, canceled_at = %s, failed_at = %s, replaced_at = %s, replaced_by = %s,
-            replaces = %s, asset_id = %s, symbol = %s, asset_class = %s, notional = %s, qty = %s,
-            filled_qty = %s, filled_avg_price = %s, order_class = %s, order_type = %s, type = %s,
-            side = %s, position_intent = %s, time_in_force = %s, limit_price = %s, stop_price = %s,
-            status = %s, extended_hours = %s, legs = %s, trail_percent = %s, trail_price = %s,
-            hwm = %s, subtag = %s, source = %s, expires_at = %s
-            WHERE id = %s
-        """, (
-            order['client_order_id'], order['created_at'], order['updated_at'], order['submitted_at'], order['filled_at'],
-            order['expired_at'], order['canceled_at'], order['failed_at'], order['replaced_at'], order['replaced_by'],
-            order['replaces'], order['asset_id'], order['symbol'], order['asset_class'], order['notional'], order['qty'],
-            order['filled_qty'], order['filled_avg_price'], order['order_class'], order['order_type'], order['type'],
-            order['side'], order['position_intent'], order['time_in_force'], order['limit_price'], order['stop_price'],
-            order['status'], order['extended_hours'], order['legs'], order['trail_percent'], order['trail_price'],
-            order['hwm'], order['subtag'], order['source'], order['expires_at'], order['order_id']
+        cursor.execute("UPDATE orders SET client_order_id = %s, created_at = %s, submitted_at = %s, symbol = %s, qty = %s, filled_avg_price = %s, type = %s, side = %s, limit_price = %s, stop_price = %s, status = %s, trail_percent = %s, trail_price = %s WHERE order_id = %s", (
+            order['client_order_id'], parse_datetime(order['created_at']), parse_datetime(order['submitted_at']),
+            order['symbol'], order['qty'], order['filled_avg_price'], order['type'], order['side'], order['limit_price'],
+            order['stop_price'], order['status'], order['trail_percent'], order['trail_price'], order['order_id']
         ))
-
         conn.commit()
         return order, 200
 
@@ -284,6 +252,28 @@ def update_order_sql(order):
     finally:
         cursor.close()
         conn.close()
+
+
+def update_order_strategy(order_id:str,strategy:str):
+    """ Update order in database.
+    Based on the Alpaca webhook, look for the order in the database and update it.
+    """
+    try:
+        conn = sql.connect()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE orders SET strategy = %s WHERE order_id = %s", (strategy,order_id))
+        conn.commit()
+        return order_id, 200
+    except mysql.connector.Error as err:
+        print(f"Error: {err}")
+        return {"error": str(err)}, 500
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        return {"error": str(e)}, 500
+    finally:
+        cursor.close()
+        conn.close()
+
 
 def filter_orders_by(id=None,strategy=None, symbol=None, side=None,state=None, from_date=None, to_date=None):
     """
@@ -359,17 +349,11 @@ def format_order_data(data):
     data_dict = json.loads(data.decode('utf-8'))
     
     # Extract the relevant information
-    stream = data_dict.get('stream')
     event_data = data_dict.get('data', {})
-    event = event_data.get('event')
-    timestamp = event_data.get('timestamp')
     order = event_data.get('order', {})
     
     # Format the order data
     formatted_data = {
-        "stream": stream,
-        "event": event,
-        "timestamp": timestamp,
         "order_id": order.get('id'),
         "client_order_id": order.get('client_order_id'),
         "created_at": order.get('created_at'),
@@ -403,6 +387,5 @@ def format_order_data(data):
         "trail_percent": order.get('trail_percent'),
         "trail_price": order.get('trail_price'),
         "hwm": order.get('hwm')
-    }
-    
+    }    
     return formatted_data

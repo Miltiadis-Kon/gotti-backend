@@ -5,7 +5,7 @@ import api.orders as od
 import api.account as ac
 import api.positions as ps
 import api.strategies as st
-import telegram_handler as tg
+import api.telegram_handler as tg
 
 
 app = FastAPI()
@@ -49,31 +49,18 @@ def get_order_info(client_order_id:str):
     pnl = od.get_order_profit_loss(client_order_id)
     return pnl
 
-@app.post('/add_order_sql')
-async def add_order_sql(request: Request):
-    """ Add order to database.
-    
-        Will only include strategy and order ID.
-        Other info will be added from the Alpaca webhook.
-    """
-    data = await request.json()
-    print(data)
-    order_id = data['order_id']
-    strategy = data['strategy']
-    asset = data['asset']
-    order = od.add_order_sql(order_id, strategy,asset)
-    return order
 
 @app.put('/update_order_sql')
-def update_order_sql(message:bytes):
+async def update_order_sql(message:bytes):
     """ Update order in database.
     Based on the Alpaca webhook, look for the order in the database and update it.
     """
     data = od.format_order_data(message)
-    print(data)
+    if data['symbol'] is None:
+        return 
     order = od.update_order_sql(data)
-    if  order['status'] == 'new' : 
-        tg.send_message(order)
+    if  data['status'] == 'new' :
+        await tg.send_message(order)
     return order
 
 @app.get('/get_order_sql')
@@ -82,6 +69,14 @@ def get_order_sql(order_id:str):
     """
     order = od.filter_orders_by(order_id)
     return order
+
+@app.post('/update_order_strategy')
+def update_order_strategy(order_id:str, strategy:str):
+    """ Update order strategy in database.
+    """
+    order = od.update_order_strategy(order_id, strategy)
+    return order
+
 
 @app.delete('/delete_order_sql')
 def delete_order_sql(order_id:str):
@@ -135,12 +130,12 @@ def enable_strategy(strategy_name:str):
 
 #region Websockets
 import asyncio
-from telegram_handler import Bot
 import websockets
 import uvicorn
 
 import os
 from dotenv import load_dotenv
+import threading
 load_dotenv()
 
 
@@ -158,10 +153,9 @@ async def listen():
         once = False
         try:
             async for message in websocket:
-
-                await update_order_sql(message) # Update order in database
-
-                print(f"Received message: {message}")
+                if once:
+                    await update_order_sql(message) # Update order in database
+                    #print(f"Received message: {message}")
                 # subscribe to trade updates stream once    
                 if not once:
                     await websocket.send('{"action":"listen","data":{"streams":["trade_updates"]}}')
@@ -169,6 +163,15 @@ async def listen():
         except websockets.ConnectionClosed:
             print("Connection closed")
 
-if __name__ == "__main__":
+def start_websocket_listener():
     asyncio.run(listen())
-    #uvicorn.run(app, host="0.0.0.0", port=8000)
+
+def start_fastapi():
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
+if __name__ == "__main__":
+    websocket_thread = threading.Thread(target=start_websocket_listener)
+    websocket_thread.start()
+
+    start_fastapi()
