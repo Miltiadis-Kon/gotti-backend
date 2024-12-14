@@ -1,4 +1,4 @@
-import sql as sql
+import api.sql as sql
 import mysql.connector
 
 #TODO: IMPLEMENT THIS

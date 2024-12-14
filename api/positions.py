@@ -1,6 +1,6 @@
 
 import requests
-from alpaca import login
+from api.alpaca import login
 
 def get_positions():
     """ Get active positions registered on Alpaca.
