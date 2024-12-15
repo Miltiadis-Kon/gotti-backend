@@ -156,26 +156,22 @@ def find_related_order(order):
         Goal : Update the main order with the stop loss and take profit orders and then delete them!
     """
     order = order[0]
-    print("Searching for side orders... ")
     try:
         conn = sql.connect()
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM orders WHERE symbol = %s AND qty = %s AND created_at= %s", (order[4], order[5], order[2],),)
         side_orders = cursor.fetchall()
-        print(f"Side orders found! {len(side_orders)}")
         if len(side_orders) == 0:
             print(f"No side orders found for the order with id {order[0]}... ")
             return order, 200
-        print(f"Updating order with id {order[0]}... ")
+        print(f"Adding stop loss and take profit order to {order[0]}... ")
         for od in side_orders:
             if od[7] == 'stop':
-                print(f"Add stop loss order with id {od[0]}... ")
                 cursor.execute("UPDATE orders SET stop_price_id = %s , stop_price= %s WHERE order_id = %s", (
                     od[0],od[10],order[0],
                 ))
                 cursor.execute("DELETE FROM orders WHERE order_id = %s", (od[0],))
             elif od[7] == 'limit':
-                print(f"Add take profit order with id {od[0]}... ")
                 cursor.execute("UPDATE orders SET limit_price_id = %s,limit_price=%s WHERE order_id = %s", (
                     od[0],od[9],order[0],
                 ))

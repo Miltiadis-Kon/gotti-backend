@@ -40,7 +40,6 @@ def manage_orders(order_id:str):
     Find main and side orders and remove them
     """
     order = od.get_order(order_id)
-    print(order)
     od.find_related_order(order)
     return {"message": "Orders removed"}, 200
 
@@ -88,6 +87,7 @@ def update_order_strategy(rq:od.OrderStrategy):
     """
     print(rq.order_id, rq.strategy)
     od.update_order_strategy(rq.order_id, rq.strategy)
+    manage_orders(rq.order_id)
     return {"message": "Strategy updated"}, 200
 
 
