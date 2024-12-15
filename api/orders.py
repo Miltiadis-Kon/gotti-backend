@@ -298,6 +298,7 @@ def update_order_strategy(order_id:str,strategy:str):
         finally:
             cursor.close()
             conn.close()
+        time.sleep(0.5) # Sleep 500ms before retrying to reduce the load on the database
     try:
         conn = sql.connect()
         cursor = conn.cursor()
