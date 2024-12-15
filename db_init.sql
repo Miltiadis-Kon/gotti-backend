@@ -17,5 +17,7 @@ CREATE TABLE orders (
     status VARCHAR(50),
     trail_percent DECIMAL(5, 2),
     trail_price DECIMAL(10, 2),
-    strategy VARCHAR(50)
+    strategy VARCHAR(50),
+    stop_price_id VARCHAR(50),
+    limit_price_id VARCHAR(50),
 );

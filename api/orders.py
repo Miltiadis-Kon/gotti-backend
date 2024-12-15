@@ -114,7 +114,28 @@ def get_order_count():
         if order['type'] != 'limit': #TODO: DO NOT RETURN TAKE PROFIT, STOP LOSS ORDERS 
             order_ctr +=1    
     return ({"pending_orders": order_ctr}), 200 
-   
+
+
+def get_order(id):
+    """ Get order from database.
+    """
+    try:
+        conn = sql.connect()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM orders WHERE order_id = %s", (id,))
+        order = cursor.fetchone()
+        if order is None:
+            raise HTTPException(status_code=404, detail="Order not found")
+        return order, 200
+    except mysql.connector.Error as err:
+        print(f"Error: {err}")
+        return {"error": str(err)}, 500
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        return {"error": str(e)}, 500
+    finally:
+        cursor.close()
+        conn.close()
 
 #TODO Test the following function
 def get_order_profit_loss(client_order_id):
@@ -127,6 +148,49 @@ def get_order_profit_loss(client_order_id):
 def parse_datetime(dt_str):
     return datetime.strptime(dt_str[:26], '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y-%m-%d %H:%M:%S')
 
+def find_related_order(order):
+    """ Find related orders to the main order.
+
+        NOTE: SIDE ORDERS ARE ADDED BEFORE MAIN ORDER IS CREATED
+        
+        Goal : Update the main order with the stop loss and take profit orders and then delete them!
+    """
+    order = order[0]
+    print("Searching for side orders... ")
+    try:
+        conn = sql.connect()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM orders WHERE symbol = %s AND qty = %s AND created_at= %s", (order[4], order[5], order[2],),)
+        side_orders = cursor.fetchall()
+        print(f"Side orders found! {len(side_orders)}")
+        if len(side_orders) == 0:
+            print(f"No side orders found for the order with id {order[0]}... ")
+            return order, 200
+        print(f"Updating order with id {order[0]}... ")
+        for od in side_orders:
+            if od[7] == 'stop':
+                print(f"Add stop loss order with id {od[0]}... ")
+                cursor.execute("UPDATE orders SET stop_price_id = %s , stop_price= %s WHERE order_id = %s", (
+                    od[0],od[10],order[0],
+                ))
+                cursor.execute("DELETE FROM orders WHERE order_id = %s", (od[0],))
+            elif od[7] == 'limit':
+                print(f"Add take profit order with id {od[0]}... ")
+                cursor.execute("UPDATE orders SET limit_price_id = %s,limit_price=%s WHERE order_id = %s", (
+                    od[0],od[9],order[0],
+                ))
+                cursor.execute("DELETE FROM orders WHERE order_id = %s", (od[0],))
+        conn.commit()
+    except mysql.connector.Error as err:
+        print(f"Error: {err}")
+        return {"error": str(err)}, 500
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        return {"error": str(e)}, 500
+    finally:
+        cursor.close()
+        conn.close()
+    return order, 200
 
 
 def add_order_sql_from_apca(order):
@@ -152,14 +216,16 @@ def add_order_sql_from_apca(order):
             "status": order.get("status"),
             "trail_percent": order.get("trail_percent"),
             "trail_price": order.get("trail_price"),
-            "strategy": "N/A"
+            "strategy": "N/A",
+            "stop_price_id" : "N/A",
+            "limit_price_id" : "N/A"
         }
         # Insert the order into the database
-        cursor.execute("INSERT INTO orders VALUES ( %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,%s, %s, %s, %s,%s) ", (
+        cursor.execute("INSERT INTO orders VALUES ( %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,%s, %s, %s, %s,%s,%s,%s) ", (
             order_data['order_id'], order_data['client_order_id'], order_data['created_at'], order_data['submitted_at'],
             order_data['symbol'], order_data['qty'], order_data['filled_avg_price'], order_data['type'],
             order_data['side'], order_data['limit_price'], order_data['stop_price'], order_data['status'],
-            order_data['trail_percent'], order_data['trail_price'], order_data['strategy']
+            order_data['trail_percent'], order_data['trail_price'], order_data['strategy'], order_data['stop_price_id'], order_data['limit_price_id']
         )) 
         conn.commit()
         print("Order added to db!")
@@ -186,7 +252,13 @@ def update_order_sql(order):
         existing_order = cursor.fetchone()
         if existing_order is None:
             print(f"There is no associated orded with the following id {order['order_id']}... Creating new order! ")
-            return add_order_sql_from_apca(order)
+            add_order_sql_from_apca(order)
+            # Check if the order is a main (market) order, if so, update the stop loss and take profit orders
+            if order['type'] == 'market':
+                find_related_order(order)
+            
+            return order, 200
+
         print(f"Updating order with id {order['order_id']}... ")
         cursor.execute("UPDATE orders SET client_order_id = %s, created_at = %s, submitted_at = %s, symbol = %s, qty = %s, filled_avg_price = %s, type = %s, side = %s, limit_price = %s, stop_price = %s, status = %s, trail_percent = %s, trail_price = %s WHERE order_id = %s", (
             order['client_order_id'], parse_datetime(order['created_at']), parse_datetime(order['submitted_at']),
@@ -304,7 +376,7 @@ def delete_order_sql(order_id):
     try:
         conn = sql.connect()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM orders WHERE id = %s", (order_id,))
+        cursor.execute("DELETE FROM orders WHERE order_id = %s", (order_id,))
         conn.commit()
         cursor.close()
         conn.close()
@@ -324,6 +396,7 @@ def format_order_data(data):
     event_data = data_dict.get('data', {})
     order = event_data.get('order', {})
     
+    print(f"Order data: {order}")
     # Format the order data
     formatted_data = {
         "order_id": order.get('id'),

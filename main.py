@@ -34,6 +34,16 @@ def get_cash_balance():
     cash = ac.get_cash_balance()
     return cash
 
+@app.get("/manage_orders")
+def manage_orders(order_id:str):
+    """ 
+    Find main and side orders and remove them
+    """
+    order = od.get_order(order_id)
+    print(order)
+    od.find_related_order(order)
+    return {"message": "Orders removed"}, 200
+
 
 @app.get("/orders")
 def get_orders():
@@ -56,8 +66,10 @@ async def update_order_sql(message:bytes):
     Based on the Alpaca webhook, look for the order in the database and update it.
     """
     data = od.format_order_data(message)
-    if data['symbol'] is None:
-        return 
+    if data['order_id'] is None :
+        return
+    # TODO: Add logic to update order status in database when a finished order message is sent!
+    
     order = od.update_order_sql(data)
     if  data['status'] == 'new' :
         await tg.send_message(order)
@@ -75,8 +87,8 @@ def update_order_strategy(rq:od.OrderStrategy):
     """ Update order strategy in database.
     """
     print(rq.order_id, rq.strategy)
-    order = od.update_order_strategy(rq.order_id, rq.strategy)
-    return order
+    od.update_order_strategy(rq.order_id, rq.strategy)
+    return {"message": "Strategy updated"}, 200
 
 
 @app.delete('/delete_order_sql')
@@ -84,7 +96,7 @@ def delete_order_sql(order_id:str):
     """ Delete order from database.
     """
     order = od.delete_order_sql(order_id)
-    return order
+    return {"message": "Order deleted"}, 200
 
 @app.get('/positions')
 def get_positions():
@@ -155,7 +167,7 @@ async def listen():
         try:
             async for message in websocket:
                 if once:
-                    await update_order_sql(message) # Update order in database
+                    await update_order_sql(message) # Update order in database 
                     #print(f"Received message: {message}")
                 # subscribe to trade updates stream once    
                 if not once:
