@@ -116,62 +116,13 @@ def get_order_count():
     return ({"pending_orders": order_ctr}), 200 
    
 
-#TODO Test the following function 
-def filter_order(client_order_id):
-    """ Preprocess orders to get main order, take profit and stop loss orders.
-        Each order is of type bracket.  
-            Main order (at market value) + 2 suborders(take profit and stop loss)
-        
-        The three orders are linked by the client_order_id.
-        So, when a suborder gets filled the trade can be considered complete.
-        And we can get the profit/loss of the trade, and the time it took to complete.
-    """
-    headers = login()
-    url = "https://paper-api.alpaca.markets/v2/orders"
-    response = requests.get(url, headers=headers)
-    orders = response.json()
-    filtered_orders = [order for order in orders if order['client_order_id'] == client_order_id] # Get all orders with the same client_order_id
-    filtered_orders.sort(key=lambda x: (x['filled_at'] is None, x['filled_at'])) # Sort by filled_at date (if filled_at is None, it will be at the end)
-    main_order = filtered_orders[0] # Main order is the first one
-    
-    # Sort suborders by ascending limit price
-    filtered_orders = filtered_orders[1:].sort(key=lambda x: x['limit_price']) 
-    if main_order['side'] == 'buy':
-        take_profit_order = filtered_orders[1]
-        stop_loss_order = filtered_orders[0]
-    else:
-        take_profit_order = filtered_orders[0]
-        stop_loss_order = filtered_orders[1] 
-        
-    return main_order, take_profit_order, stop_loss_order
-
 #TODO Test the following function
 def get_order_profit_loss(client_order_id):
     """ Get profit/loss of a trade.
         Response:
         {"profit_loss": 100}
     """
-    main_order, take_profit_order, stop_loss_order = filter_order(client_order_id)
-    if take_profit_order['filled_at'] is None and stop_loss_order['filled_at'] is None:
-        return ({"profit_loss": "Trade not completed"}), 200
-    else:
-        # Sort take_profit_order and stop_loss_order by filled_at, if one is None then put it last
-        orders = [take_profit_order, stop_loss_order]
-        filled_order = orders.sort(key=lambda x: (x['filled_at'] is None, x['filled_at']))[0] # Get the first order that is not None   
-        profit_loss = float(filled_order['filled_avg_price']) - float(main_order['filled_avg_price'])
-        
-        #TODO Update the order in the database with the profit_loss,and time it took to complete
-        completion_time = 60 # TODO: fix this
-        
-        #Delete take_profit_order and stop_loss_order from database to reduce clutter.
-        delete_order_sql(take_profit_order['id'])
-        delete_order_sql(stop_loss_order['id'])
-        
-        # Update strategy params
-        st.update_strategy_params(main_order, profit_loss,completion_time)
-        
-        return ({"profit_loss": profit_loss}), 200
-
+    pass
 # Function to parse and format datetime strings
 def parse_datetime(dt_str):
     return datetime.strptime(dt_str[:26], '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y-%m-%d %H:%M:%S')
@@ -222,7 +173,8 @@ def add_order_sql_from_apca(order):
     finally:
         cursor.close()
         conn.close()
-#TODO Test the following function
+        
+        
 def update_order_sql(order):
     """ Update order in database.
     Based on the Alpaca webhook, look for the order in the database and update it.
@@ -233,8 +185,9 @@ def update_order_sql(order):
         cursor.execute("SELECT * FROM orders WHERE order_id = %s", (order['order_id'],))
         existing_order = cursor.fetchone()
         if existing_order is None:
-            print(f"There is no associated orded with the following id{order['order_id']}...\n Creating new order! ")
+            print(f"There is no associated orded with the following id {order['order_id']}... Creating new order! ")
             return add_order_sql_from_apca(order)
+        print(f"Updating order with id {order['order_id']}... ")
         cursor.execute("UPDATE orders SET client_order_id = %s, created_at = %s, submitted_at = %s, symbol = %s, qty = %s, filled_avg_price = %s, type = %s, side = %s, limit_price = %s, stop_price = %s, status = %s, trail_percent = %s, trail_price = %s WHERE order_id = %s", (
             order['client_order_id'], parse_datetime(order['created_at']), parse_datetime(order['submitted_at']),
             order['symbol'], order['qty'], order['filled_avg_price'], order['type'], order['side'], order['limit_price'],
@@ -258,6 +211,25 @@ def update_order_strategy(order_id:str,strategy:str):
     """ Update order in database.
     Based on the Alpaca webhook, look for the order in the database and update it.
     """
+    od_found = False
+    while not od_found:
+        try:
+            conn = sql.connect()
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM orders WHERE order_id = %s", (order_id,))
+            existing_order = cursor.fetchone()
+            if existing_order is None:
+                continue 
+            od_found = True
+        except mysql.connector.Error as err:
+            print(f"Error: {err}")
+            return {"error": str(err)}, 500
+        except Exception as e:
+            print(f"Unexpected error: {e}")
+            return {"error": str(e)}, 500
+        finally:
+            cursor.close()
+            conn.close()
     try:
         conn = sql.connect()
         cursor = conn.cursor()
@@ -389,3 +361,12 @@ def format_order_data(data):
         "hwm": order.get('hwm')
     }    
     return formatted_data
+
+
+from pydantic import BaseModel
+import time
+
+class OrderStrategy(BaseModel):
+    order_id: str
+    strategy: str
+    

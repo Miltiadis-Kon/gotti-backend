@@ -71,10 +71,11 @@ def get_order_sql(order_id:str):
     return order
 
 @app.post('/update_order_strategy')
-def update_order_strategy(order_id:str, strategy:str):
+def update_order_strategy(rq:od.OrderStrategy):
     """ Update order strategy in database.
     """
-    order = od.update_order_strategy(order_id, strategy)
+    print(rq.order_id, rq.strategy)
+    order = od.update_order_strategy(rq.order_id, rq.strategy)
     return order
 
 
