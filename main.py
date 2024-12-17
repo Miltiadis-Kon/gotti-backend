@@ -183,8 +183,3 @@ def start_fastapi():
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
 
-if __name__ == "__main__":
-    websocket_thread = threading.Thread(target=start_websocket_listener)
-    websocket_thread.start()
-
-    start_fastapi()
