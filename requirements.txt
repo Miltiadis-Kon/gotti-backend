@@ -4,4 +4,4 @@ pydantic
 uvicorn
 mysql-connector-python
 python-telegram-bot
-dotenv
+python-dotenv
