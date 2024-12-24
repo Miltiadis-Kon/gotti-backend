@@ -2,7 +2,7 @@ import api.sql as sql
 import psycopg2
 
 #TODO: IMPLEMENT THIS
-def get_strategy():
+def get_strategies():
     """ Get list of strategy available
         Response:
         [{"strategy_name":"mean_reversion",
@@ -189,4 +189,4 @@ def update_strategy_params(profit_loss,completion_time,strategy):
     except Exception as e:
         print(f"Error: {e}")
     return ({"error": "Error updating order"}), 500
-        
+    
