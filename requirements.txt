@@ -2,6 +2,6 @@ fastapi
 alpaca-py
 pydantic
 uvicorn
-mysql-connector-python
+psycopg2
 python-telegram-bot
 python-dotenv

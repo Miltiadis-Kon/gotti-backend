@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from api.alpaca import login
 import requests
 import api.sql as sql
-import mysql.connector
+import psycopg2 
 import api.strategies as st
 
 
@@ -127,7 +127,7 @@ def get_order(id):
         if order is None:
             raise HTTPException(status_code=404, detail="Order not found")
         return order, 200
-    except mysql.connector.Error as err:
+    except psycopg2.Error as err:
         print(f"Error: {err}")
         return {"error": str(err)}, 500
     except Exception as e:
@@ -177,7 +177,7 @@ def find_related_order(order):
                 ))
                 cursor.execute("DELETE FROM orders WHERE order_id = %s", (od[0],))
         conn.commit()
-    except mysql.connector.Error as err:
+    except psycopg2.Error as err:
         print(f"Error: {err}")
         return {"error": str(err)}, 500
     except Exception as e:
@@ -226,7 +226,7 @@ def add_order_sql_from_apca(order):
         conn.commit()
         print("Order added to db!")
         return order, 200
-    except mysql.connector.Error as err:
+    except psycopg2.Error as err:
         print(f"Error: {err}")
         return {"error": str(err)}, 500
     except Exception as e:
@@ -264,7 +264,7 @@ def update_order_sql(order):
         conn.commit()
         return order, 200
 
-    except mysql.connector.Error as err:
+    except psycopg2.Error as err:
         print(f"Error: {err}")
         return {"error": str(err)}, 500
     except Exception as e:
@@ -289,7 +289,7 @@ def update_order_strategy(order_id:str,strategy:str):
             if existing_order is None:
                 continue 
             od_found = True
-        except mysql.connector.Error as err:
+        except psycopg2.Error as err:
             print(f"Error: {err}")
             return {"error": str(err)}, 500
         except Exception as e:
@@ -305,7 +305,7 @@ def update_order_strategy(order_id:str,strategy:str):
         cursor.execute("UPDATE orders SET strategy = %s WHERE order_id = %s", (strategy,order_id))
         conn.commit()
         return order_id, 200
-    except mysql.connector.Error as err:
+    except psycopg2.Error as err:
         print(f"Error: {err}")
         return {"error": str(err)}, 500
     except Exception as e:
@@ -378,7 +378,7 @@ def delete_order_sql(order_id):
         cursor.close()
         conn.close()
         print(" Order deleted from db!")
-    except mysql.connector.Error as err:
+    except psycopg2.Error as err:
         print(f"Error: {err}")
     except Exception as e:
         print(f"Unexpected error: {e}")

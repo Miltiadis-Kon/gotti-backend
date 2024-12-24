@@ -1,5 +1,5 @@
 import api.sql as sql
-import mysql.connector
+import psycopg2
 
 #TODO: IMPLEMENT THIS
 def get_strategies():
@@ -30,7 +30,7 @@ def get_strategies():
         conn.close()
         print(" Strategies fetched from db!")
         return strategies, 200
-    except mysql.connector.Error as err:
+    except psycopg2.Error as err:
         print(f"Error: {err}")
     except Exception as e:
         print(f"Error: {e}")
@@ -66,7 +66,7 @@ def get_strategy(strategy_name):
         conn.close()
         print(" Strategy fetched from db!")
         return strategy, 200
-    except mysql.connector.Error as err:
+    except psycopg2.Error as err:
         print(f"Error: {err}")
     except Exception as e:
         print(f"Error: {e}")
@@ -101,7 +101,7 @@ def add_strategy(strategy_name,description,risk_reward_ratio,max_drawdown):
         cursor.close()
         conn.close()
         print(" Strategy added to db!")
-    except mysql.connector.Error as err:
+    except psycopg2.Error as err:
         print(f"Error: {err}")
     except Exception as e:
         print(f"Error: {e}")
@@ -131,7 +131,7 @@ def enable_strategy(strategy_name):
         
         #TODO: Add logic to enable/disable strategy script in trading bot
         
-    except mysql.connector.Error as err:
+    except psycopg2.Error as err:
         print(f"Error: {err}")
     except Exception as e:
         print(f"Error: {e}")
@@ -184,7 +184,7 @@ def update_strategy_params(profit_loss,completion_time,strategy):
         cursor.close()
         conn.close()
         print(" Strategy updated in db!")
-    except mysql.connector.Error as err:
+    except psycopg2.Error as err:
         print(f"Error: {err}")
     except Exception as e:
         print(f"Error: {e}")
