@@ -2,8 +2,8 @@ import api.sql as sql
 import psycopg2
 
 #TODO: IMPLEMENT THIS
-def get_strategies():
-    """ Get list of strategies available
+def get_strategy():
+    """ Get list of strategy available
         Response:
         [{"strategy_name":"mean_reversion",
         "description":"buy low, sell high",
@@ -24,17 +24,17 @@ def get_strategies():
     try:
         conn = sql.connect()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM strategies")
-        strategies = cursor.fetchall()
+        cursor.execute("SELECT * FROM strategy")
+        strategy = cursor.fetchall()
         cursor.close()
         conn.close()
-        print(" Strategies fetched from db!")
-        return strategies, 200
+        print(" strategy fetched from db!")
+        return strategy, 200
     except psycopg2.Error as err:
         print(f"Error: {err}")
     except Exception as e:
         print(f"Error: {e}")
-        return ({"error": "Error fetching strategies"}), 500
+        return ({"error": "Error fetching strategy"}), 500
     
 
 #TODO: IMPLEMENT THIS
@@ -60,7 +60,7 @@ def get_strategy(strategy_name):
     try:
         conn = sql.connect()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM strategies WHERE strategy_name = %s", (strategy_name,))
+        cursor.execute("SELECT * FROM strategy WHERE strategy_name = %s", (strategy_name,))
         strategy = cursor.fetchone()
         cursor.close()
         conn.close()
@@ -96,7 +96,7 @@ def add_strategy(strategy_name,description,risk_reward_ratio,max_drawdown):
     try:
         conn = sql.connect()
         cursor = conn.cursor()
-        cursor.execute("INSERT INTO strategies (strategy_name,description,risk_reward_ratio,max_drawdown) VALUES (%s,%s,%s,%s)", (strategy_name,description,risk_reward_ratio,max_drawdown))
+        cursor.execute("INSERT INTO strategy (strategy_name,description,risk_reward_ratio,max_drawdown) VALUES (%s,%s,%s,%s)", (strategy_name,description,risk_reward_ratio,max_drawdown))
         conn.commit()
         cursor.close()
         conn.close()
@@ -116,13 +116,13 @@ def enable_strategy(strategy_name):
     try:
         conn = sql.connect()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM strategies WHERE strategy_name = %s", strategy_name)
+        cursor.execute("SELECT * FROM strategy WHERE strategy_name = %s", strategy_name)
         stratrgy = cursor.fetchone()
         if stratrgy is None:
             return ({"error": "Strategy not found"}), 404
         is_active = not stratrgy['is_active']
         cursor.execute(
-            "UPDATE strategies SET is_active = %s WHERE strategy_name = %s", (is_active, strategy_name)
+            "UPDATE strategy SET is_active = %s WHERE strategy_name = %s", (is_active, strategy_name)
         )
         conn.commit()
         cursor.close()
@@ -143,7 +143,7 @@ def enable_strategy(strategy_name):
 def update_strategy_params(profit_loss,completion_time,strategy):
     """ Update parameters of single strategy.
     
-        Strategies have specific fields that need to be calculated.
+        strategy have specific fields that need to be calculated.
         
         Risk Reward Ratio: Average profit per trade / Average loss per trade
         Winrate: Number of profitable trades / Total trades
@@ -172,12 +172,12 @@ def update_strategy_params(profit_loss,completion_time,strategy):
     try:
         conn = sql.connect()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM strategies WHERE strategy_name = %s", (strategy['strategy_name'],))
+        cursor.execute("SELECT * FROM strategy WHERE strategy_name = %s", (strategy['strategy_name'],))
         order = cursor.fetchone()
         if order is None:
             return ({"error": "Strategy not found"}), 404
         cursor.execute(
-            "UPDATE strategies SET winrate = %s, avg_holding_period = %s, avg_trades_per_month = %s, avg_profit_per_trade = %s, total_trades = %s, total_profit_loss = %s, profitable_trades = %s WHERE strategy_name = %s",
+            "UPDATE strategy SET winrate = %s, avg_holding_period = %s, avg_trades_per_month = %s, avg_profit_per_trade = %s, total_trades = %s, total_profit_loss = %s, profitable_trades = %s WHERE strategy_name = %s",
             (winrate,avg_holding_period, avg_trades_per_mo, avg_profit_per_trade, total_trades, total_profit_loss, profitable_trades, strategy['strategy_name'])
         )
         conn.commit()
