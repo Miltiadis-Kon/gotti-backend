@@ -127,11 +127,11 @@ def get_strategy(strategy_name:str):
     return st.get_strategy(strategy_name)
 
 @app.post('/add_strategy')
-def add_strategy():
+def add_strategy(strategy_name: str,description: str,risk_reward_ratio: str,max_drawdown: str):
     """
     Add a new strategy
     """
-    return st.add_strategy()
+    return st.add_strategy(strategy_name,description,risk_reward_ratio,max_drawdown)
 
 @app.post('/enable_strategy')
 def enable_strategy(strategy_name:str):
