@@ -184,5 +184,5 @@ async def websocket_endpoint(websocket: WebSocket):
 # def start_websocket_listener():
 # def start_fastapi():
 
-if __name__ == "__main__":
+def start():
     uvicorn.run(app, host="0.0.0.0", port=10000)
