@@ -314,6 +314,7 @@ def update_order_strategy(order_id:str,strategy:str):
     finally:
         cursor.close()
         conn.close()
+        return None, 200
 
 
 def filter_orders_by(id=None,strategy=None, symbol=None, side=None,state=None, from_date=None, to_date=None):
