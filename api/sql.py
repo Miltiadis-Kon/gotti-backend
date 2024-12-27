@@ -13,5 +13,4 @@ def connect():
         host=os.getenv("DB_HOST"),
         port=os.getenv("DB_PORT")
     )
-    print("Connected to db")
     return conn
