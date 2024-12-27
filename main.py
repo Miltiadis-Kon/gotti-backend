@@ -172,6 +172,7 @@ async def listen():
                 # subscribe to trade updates stream once    
                 if not once:
                     await websocket.send('{"action":"listen","data":{"streams":["trade_updates"]}}')
+                    print("Subscribed to trade updates!")
                     once = True
         except websockets.ConnectionClosed:
             print("Connection closed")
