@@ -142,45 +142,47 @@ def enable_strategy(strategy_name:str):
 
 
 #region Websockets
-import asyncio
 import websockets
 import uvicorn
-
+import json
 import os
 from dotenv import load_dotenv
-import threading
 load_dotenv()
 
 
 apikey = os.getenv("APCA_API_KEY_PAPER")
 apisecret = os.getenv("APCA_API_SECRET_KEY_PAPER")
 
-
-async def listen():
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    
     uri = "wss://paper-api.alpaca.markets/stream"
-    async with websockets.connect(uri) as websocket:
-        print("Connected to WebSocket server")
-        # Send ack msg
-        AUTH = f'{{"action": "auth","key": "{apikey}","secret": "{apisecret}"}}'
-        await websocket.send(AUTH)
-        once = False
+    async with websockets.connect(uri) as alpaca_ws:
+        print("Connected to Alpaca WebSocket")
+        
+        # Auth with Alpaca
+        AUTH = {
+            "action": "auth",
+            "key": apikey,
+            "secret": apisecret
+        }
+        await alpaca_ws.send(json.dumps(AUTH))
+        
+        # Subscribe to trade updates
+        await alpaca_ws.send('{"action":"listen","data":{"streams":["trade_updates"]}}')
+        print("Subscribed to trade updates!")
+        
         try:
-            async for message in websocket:
-                if once:
-                    await update_order_sql(message) # Update order in database 
-                    #print(f"Received message: {message}")
-                # subscribe to trade updates stream once    
-                if not once:
-                    await websocket.send('{"action":"listen","data":{"streams":["trade_updates"]}}')
-                    print("Subscribed to trade updates!")
-                    once = True
+            while True:
+                message = await alpaca_ws.recv()
+                await update_order_sql(message)
         except websockets.ConnectionClosed:
-            print("Connection closed")
+            print("Alpaca connection closed")
 
-def start_websocket_listener():
-    asyncio.run(listen())
+# Remove these functions as they're no longer needed
+# def start_websocket_listener():
+# def start_fastapi():
 
-def start_fastapi():
+if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=10000)
-
-
