@@ -8,7 +8,90 @@ import api.strategies as st
 import api.telegram_handler as tg
 
 
+import asyncio
+import websockets
+import json
+from typing import Optional
+
+
+import uvicorn
+import os
+from dotenv import load_dotenv
+
 app = FastAPI()
+
+#region Websocket
+
+load_dotenv()
+
+
+apikey = os.getenv("APCA_API_KEY_PAPER")
+apisecret = os.getenv("APCA_API_SECRET_KEY_PAPER")
+
+
+
+class AlpacaWebSocket:
+    def __init__(self):
+        self.ws: Optional[websockets.WebSocketClientProtocol] = None
+        self.uri = "wss://paper-api.alpaca.markets/stream"
+        
+    async def connect(self):
+        self.ws = await websockets.connect(self.uri)
+        await self.authenticate()
+        await self.subscribe()
+        
+    async def authenticate(self):
+        auth_data = {
+            "action": "auth",
+            "key": apikey,
+            "secret": apisecret
+        }
+        await self.ws.send(json.dumps(auth_data))
+        resp = await self.ws.recv()
+        print(f"Auth response: {resp}")
+        
+    async def subscribe(self):
+        subscribe_message = {
+            "action": "listen",
+            "data": {
+                "streams": ["trade_updates"]
+            }
+        }
+        await self.ws.send(json.dumps(subscribe_message))
+        
+    async def process_messages(self):
+        while True:
+            try:
+                message = await self.ws.recv()
+                data = json.loads(message)
+                print(f"Received: {data}")
+                # Handle message here
+                if data.get('data'):
+                    await update_order_sql(message)
+            except Exception as e:
+                print(f"Error processing message: {e}")
+                await asyncio.sleep(1)
+
+# Create WebSocket instance
+alpaca_ws = AlpacaWebSocket()
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(connect_and_process())
+
+async def connect_and_process():
+    while True:
+        try:
+            await alpaca_ws.connect()
+            await alpaca_ws.process_messages()
+        except Exception as e:
+            print(f"WebSocket error: {e}")
+            await asyncio.sleep(1)
+
+def start():
+    uvicorn.run(app, host="0.0.0.0", port=10000)
+
+#region API 
 
 
 @app.get("/")
@@ -139,50 +222,3 @@ def enable_strategy(strategy_name:str):
     Enable a strategy
     """
     return st.enable_strategy(strategy_name)
-
-
-#region Websockets
-import websockets
-import uvicorn
-import json
-import os
-from dotenv import load_dotenv
-load_dotenv()
-
-
-apikey = os.getenv("APCA_API_KEY_PAPER")
-apisecret = os.getenv("APCA_API_SECRET_KEY_PAPER")
-
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
-    
-    uri = "wss://paper-api.alpaca.markets/stream"
-    async with websockets.connect(uri) as alpaca_ws:
-        print("Connected to Alpaca WebSocket")
-        
-        # Auth with Alpaca
-        AUTH = {
-            "action": "auth",
-            "key": apikey,
-            "secret": apisecret
-        }
-        await alpaca_ws.send(json.dumps(AUTH))
-        
-        # Subscribe to trade updates
-        await alpaca_ws.send('{"action":"listen","data":{"streams":["trade_updates"]}}')
-        print("Subscribed to trade updates!")
-        
-        try:
-            while True:
-                message = await alpaca_ws.recv()
-                await update_order_sql(message)
-        except websockets.ConnectionClosed:
-            print("Alpaca connection closed")
-
-# Remove these functions as they're no longer needed
-# def start_websocket_listener():
-# def start_fastapi():
-
-def start():
-    uvicorn.run(app, host="0.0.0.0", port=10000)
