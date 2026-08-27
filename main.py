@@ -1,224 +1,180 @@
-
-from fastapi import FastAPI, Request, WebSocket
-
-import api.orders as od
-import api.account as ac
-import api.positions as ps
-import api.strategies as st
-import api.telegram_handler as tg
-
-
 import asyncio
-import websockets
-import json
-from typing import Optional
+import uuid
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from config.settings import settings
+from config.vault_registry import VAULT_REGISTRY
+from db.connection import pool
+from db.repository import repo
+from services.logging_service import logger
+from services.client_service import client_service
+from tasks.scheduler import task_scheduler
+from ws_channels.signal_listener import SignalListener
+from ws_channels.trade_publisher import trade_publisher
+
+# Import routers
+from api.routers.vault_router import router as vault_router
+from api.routers.holdings_router import router as holdings_router
+from api.routers.transaction_router import router as transaction_router
+from api.routers.signals_router import router as signals_router
+from api.routers.admin_router import router as admin_router
+from api.routers.client_router import router as client_router
+from api.routers.subaccount_router import router as subaccount_router
+from api.routers.stock_router import router as stock_router
 
 
-import uvicorn
-import os
-from dotenv import load_dotenv
+def _seed_vaults() -> None:
+    """Ensure all 3 Master ETF vault records exist in the database."""
 
-app = FastAPI()
-
-#region Websocket
-
-load_dotenv()
-
-
-apikey = os.getenv("APCA_API_KEY_PAPER")
-apisecret = os.getenv("APCA_API_SECRET_KEY_PAPER")
-
-
-
-class AlpacaWebSocket:
-    def __init__(self):
-        self.ws: Optional[websockets.WebSocketClientProtocol] = None
-        self.uri = "wss://paper-api.alpaca.markets/stream"
-        
-    async def connect(self):
-        self.ws = await websockets.connect(self.uri)
-        await self.authenticate()
-        await self.subscribe()
-        
-    async def authenticate(self):
-        auth_data = {
-            "action": "auth",
-            "key": apikey,
-            "secret": apisecret
-        }
-        await self.ws.send(json.dumps(auth_data))
-        resp = await self.ws.recv()
-        print(f"Auth response: {resp}")
-        
-    async def subscribe(self):
-        subscribe_message = {
-            "action": "listen",
-            "data": {
-                "streams": ["trade_updates"]
-            }
-        }
-        await self.ws.send(json.dumps(subscribe_message))
-        
-    async def process_messages(self):
-        while True:
-            try:
-                message = await self.ws.recv()
-                data = json.loads(message)
-                print(f"Received: {data}")
-                # Handle message here
-                if data.get('data'):
-                    await update_order_sql(message)
-            except Exception as e:
-                print(f"Error processing message: {e}")
-                await asyncio.sleep(1)
-
-# Create WebSocket instance
-alpaca_ws = AlpacaWebSocket()
-
-@app.on_event("startup")
-async def startup_event():
-    asyncio.create_task(connect_and_process())
-
-async def connect_and_process():
-    while True:
-        try:
-            await alpaca_ws.connect()
-            await alpaca_ws.process_messages()
-        except Exception as e:
-            print(f"WebSocket error: {e}")
-            await asyncio.sleep(1)
-
-def start():
-    uvicorn.run(app, host="0.0.0.0", port=10000)
-
-#region API 
+    from decimal import Decimal
+    for level, config in VAULT_REGISTRY.items():
+        existing = repo.get_vault(level)
+        if not existing:
+            vault_id = str(uuid.uuid4())
+            repo.upsert_vault(
+                vault_id=vault_id,
+                risk_level=level,
+                name=config.name,
+                symbol=config.symbol,
+                annual_fee=Decimal(str(config.annual_fee)),
+            )
+            logger.info(f"Seeded vault: Level {level} — {config.name} (id={vault_id})")
+        else:
+            logger.info(f"Vault exists: Level {level} — {config.name}")
 
 
-@app.get("/")
-def read_root():
-    return {"Hello": "World"}
+async def _on_signal_received(signal_data: dict) -> None:
+    """Callback: forward classified signals with hierarchical trading permissions to the trade publisher."""
+    await trade_publisher.publish_trade_command(
+        ticker=signal_data["ticker"],
+        risk_level=signal_data["risk_level"],
+        signal_position=signal_data["signal_position"],
+        evaluation_score=signal_data.get("evaluation_score"),
+        eligible_levels=signal_data.get("eligible_levels"),
+        eligible_vaults=signal_data.get("eligible_vaults"),
+    )
 
 
-@app.get("/account_pnl")
-def get_pnl():
-    """ Get total profit/loss from active positions.
-        
-        Response: "pnl":"802.234"
-    """
-    pnl = ac.get_pnl()
-    return pnl
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application startup and shutdown lifecycle."""
+    # ── Startup ──────────────────────────────────────────────
+    logger.startup("Gotti Backend — Module 4 Core Engine starting...")
 
-@app.get("/account_cash")
-def get_cash_balance():
-    """ Get available cash balance
-        Response: 
-        {"available_balance": cash}
-    """
-    cash = ac.get_cash_balance()
-    return cash
+    # 1. Initialize database connection pool
+    try:
+        pool.initialize()
+        logger.startup("Database connection pool initialized")
+    except Exception as e:
+        logger.error(f"Database connection pool initialization warning: {e}")
 
-@app.get("/manage_orders")
-def manage_orders(order_id:str):
-    """ 
-    Find main and side orders and remove them
-    """
-    order = od.get_order(order_id)
-    od.find_related_order(order)
-    return {"message": "Orders removed"}, 200
+    # 2. Initialize database schema & seed demo tables
+    try:
+        repo.init_schema()
+        settings.load_from_db()
+        logger.startup("Database schema verified and dynamic credentials loaded from MySQL")
+    except Exception as e:
+        logger.error(f"Database schema init warning: {e}")
+
+    # 3. Seed vault records and demo client profiles
+    try:
+        _seed_vaults()
+        client_service.seed_initial_demo_data()
+        logger.startup("Vaults and Client seed data verified")
+    except Exception as e:
+        logger.error(f"Seed data warning: {e}")
+
+    # 4. Start trade publisher (WebSocket server for gotti-visualize)
+    try:
+        await trade_publisher.start()
+    except Exception as e:
+        logger.error(f"Trade publisher startup warning: {e}")
+
+    # 5. Start signal listener (WebSocket client for stock-alchemist)
+    signal_listener = SignalListener(on_signal_callback=_on_signal_received)
+    listener_task = asyncio.create_task(signal_listener.start())
+
+    # 6. Start periodic task scheduler
+    try:
+        task_scheduler.start()
+    except Exception as e:
+        logger.error(f"Scheduler startup warning: {e}")
+
+    logger.startup(
+        f"Module 4 ready — API on port {settings.port}, "
+        f"Trade WS on port {settings.trade_ws_port}"
+    )
+
+    yield  # ── App is running ──
+
+    # ── Shutdown ─────────────────────────────────────────────
+    logger.shutdown("Module 4 shutting down...")
+    try:
+        task_scheduler.stop()
+    except Exception:
+        pass
+    try:
+        signal_listener.stop()
+        listener_task.cancel()
+    except Exception:
+        pass
+    try:
+        await trade_publisher.stop()
+    except Exception:
+        pass
+    try:
+        pool.close()
+    except Exception:
+        pass
+    logger.shutdown("Shutdown complete")
 
 
-@app.get("/orders")
-def get_orders():
-   return od.get_orders()
+# ── Create FastAPI app ───────────────────────────────────────
+app = FastAPI(
+    title="Gotti Backend — Module 4",
+    description="Central Core Engine connecting stock-alchemist, gotti-visualize, and gotti-frontend",
+    version="2.0.0",
+    lifespan=lifespan,
+)
 
-@app.get('/order_count')
-def get_order_count():
-    return od.get_order_count()
+# ── CORS middleware ──────────────────────────────────────────
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-@app.get('/order_info')
-def get_order_info(client_order_id:str):
-    """ Get details of a trade. """
-    pnl = od.get_order_profit_loss(client_order_id)
-    return pnl
+# ── Mount routers ────────────────────────────────────────────
+# ETF Vault & Ledger endpoints (Frontend ETF contracts)
+app.include_router(vault_router, prefix="/api/etf")
+app.include_router(holdings_router, prefix="/api/etf")
+app.include_router(transaction_router, prefix="/api/etf")
 
+# Client Registry, Sub-Accounts, Funds, and Orders
+app.include_router(client_router, prefix="/api")
+app.include_router(subaccount_router, prefix="/api")
+app.include_router(stock_router, prefix="/api")
 
-@app.put('/update_order_sql')
-async def update_order_sql(message:bytes):
-    """ Update order in database.
-    Based on the Alpaca webhook, look for the order in the database and update it.
-    """
-    data = od.format_order_data(message)
-    if data['order_id'] is None :
-        return
-    # TODO: Add logic to update order status in database when a finished order message is sent!
-    
-    order = od.update_order_sql(data)
-    if  data['status'] == 'new' :
-        await tg.send_message(order)
-    return order
-
-@app.get('/get_order_sql')
-def get_order_sql(order_id:str):
-    """ Get order from database.
-    """
-    order = od.filter_orders_by(order_id)
-    return order
-
-@app.post('/update_order_strategy')
-def update_order_strategy(rq:od.OrderStrategy):
-    """ Update order strategy in database.
-    """
-    print(rq.order_id, rq.strategy)
-    od.update_order_strategy(rq.order_id, rq.strategy)
-    manage_orders(rq.order_id)
-    return {"message": "Strategy updated"}, 200
+# Signals & Admin
+app.include_router(signals_router, prefix="/api")
+app.include_router(admin_router, prefix="/api")
 
 
-@app.delete('/delete_order_sql')
-def delete_order_sql(order_id:str):
-    """ Delete order from database.
-    """
-    order = od.delete_order_sql(order_id)
-    return {"message": "Order deleted"}, 200
+@app.get("/health")
+def health_check():
+    """Health check endpoint."""
+    from datetime import datetime, timezone
+    return {
+        "status": "ok",
+        "service": "gotti-backend-m4",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
 
-@app.get('/positions')
-def get_positions():
-    """
-    Get active positions registered on Alpaca.
-    """
-    return ps.get_positions()
 
-@app.get('/position_count')
-def get_position_count():
-    """
-    Get number of active positions
-    """
-    return ps.get_position_count()
-
-@app.get('/strategies')
-def get_strategies():
-    """
-    Get all strategies.
-    """
-    return st.get_strategies()
-
-@app.get('/strategy')
-def get_strategy(strategy_name:str):
-    """
-    Get details of a strategy
-    """
-    return st.get_strategy(strategy_name)
-
-@app.post('/add_strategy')
-def add_strategy(strategy_name: str,description: str,risk_reward_ratio: str,max_drawdown: str):
-    """
-    Add a new strategy
-    """
-    return st.add_strategy(strategy_name,description,risk_reward_ratio,max_drawdown)
-
-@app.post('/enable_strategy')
-def enable_strategy(strategy_name:str):
-    """
-    Enable a strategy
-    """
-    return st.enable_strategy(strategy_name)
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=settings.port)

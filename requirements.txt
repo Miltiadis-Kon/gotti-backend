@@ -1,7 +1,12 @@
 fastapi
-alpaca-py
-pydantic
 uvicorn
-psycopg2
-python-telegram-bot
+pydantic
 python-dotenv
+mysql-connector-python
+alpaca-py
+websockets
+apscheduler
+httpx
+yfinance
+numpy
+pandas
