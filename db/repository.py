@@ -963,6 +963,104 @@ class Repository:
             rows = cursor.fetchall()
             return {r["ticker"].upper() for r in rows}
 
+    # ── Financial News Operations ───────────────────────────────────
+
+    def upsert_news_article(
+        self,
+        date_str: str,
+        ticker: str,
+        headline: str,
+        content: str,
+        source: str = "LSEG",
+        story_id: str | None = None,
+        url: str | None = None,
+        author: str | None = None,
+        metadata: dict | None = None,
+        expiry_days: int = 90
+    ) -> str:
+        """
+        Upsert a financial news article into gotti.news.
+        Returns the 32-char entry_key (MD5 hash).
+        """
+        import hashlib
+        from datetime import timedelta
+
+        # Unique identifier for the news article
+        unique_ref = story_id or url or headline
+        key_str = f"{date_str}_news_{ticker.upper()}_{unique_ref}"
+        entry_key = hashlib.md5(key_str.encode("utf-8")).hexdigest()
+
+        now = datetime.now()
+        created_at = now.strftime("%Y-%m-%d %H:%M:%S")
+        updated_at = created_at
+        expiry_date = (now + timedelta(days=expiry_days)).strftime("%Y-%m-%d")
+
+        data_payload = {
+            "headline": headline,
+            "content": content,
+            "story_id": story_id,
+            "url": url,
+            "source": source,
+            "author": author,
+        }
+
+        meta = metadata or {}
+        meta["source"] = source
+        if story_id:
+            meta["story_id"] = story_id
+
+        sql = """
+            INSERT INTO news (entry_key, date, ticker, data, created_at, updated_at, expiry_date, metadata)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                data = VALUES(data),
+                updated_at = VALUES(updated_at),
+                expiry_date = VALUES(expiry_date),
+                metadata = VALUES(metadata)
+        """
+        with pool.get_cursor() as cursor:
+            cursor.execute(sql, (
+                entry_key,
+                date_str,
+                ticker.upper(),
+                json.dumps(data_payload, default=str),
+                created_at,
+                updated_at,
+                expiry_date,
+                json.dumps(meta, default=str)
+            ))
+
+        return entry_key
+
+    def get_recent_news(self, ticker: str | None = None, limit: int = 50) -> list[dict]:
+        """Retrieve recent financial news articles."""
+        query = "SELECT entry_key, date, ticker, data, created_at, updated_at, expiry_date, metadata FROM news"
+        params: list[Any] = []
+        if ticker:
+            query += " WHERE ticker = %s"
+            params.append(ticker.upper())
+        query += " ORDER BY created_at DESC LIMIT %s"
+        params.append(limit)
+
+        with pool.get_cursor() as cursor:
+            cursor.execute(query, tuple(params))
+            rows = cursor.fetchall()
+            for r in rows:
+                if isinstance(r.get("data"), str):
+                    try:
+                        r["data"] = json.loads(r["data"])
+                    except Exception:
+                        pass
+                if isinstance(r.get("metadata"), str):
+                    try:
+                        r["metadata"] = json.loads(r["metadata"])
+                    except Exception:
+                        pass
+                for dt_col in ("created_at", "updated_at"):
+                    if isinstance(r.get(dt_col), datetime):
+                        r[dt_col] = r[dt_col].isoformat()
+            return rows
+
 
 # Singleton repository instance
 repo = Repository()
