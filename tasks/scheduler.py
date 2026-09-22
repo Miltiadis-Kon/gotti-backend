@@ -40,6 +40,16 @@ class TaskScheduler:
         # Candlesticks (1-year 5-minute) are now collected strictly on-demand via ws_channels.news_listener
         # whenever live breaking news is received for a ticker.
 
+        # LSEG Bridge & NordLayer VPN Watchdog — runs every 60s
+        self._scheduler.add_job(
+            self._lseg_watchdog_task,
+            'interval',
+            seconds=60,
+            id='lseg_watchdog',
+            name='LSEG VPN Watchdog',
+        )
+        logger.startup('LSEG VPN Watchdog scheduled every 60s')
+
         self._scheduler.start()
         logger.startup(f'Scheduler started — NAV sync every {interval}s')
 
@@ -91,6 +101,15 @@ class TaskScheduler:
                 logger.info(f"Git updates pulled and reloaded services: {res.get('reloaded_services')}")
         except Exception as e:
             logger.error(f'Scheduled Git sync failed: {e}')
+
+    async def _lseg_watchdog_task(self) -> None:
+        """Periodic LSEG Bridge and NordLayer VPN health check task."""
+        try:
+            import asyncio
+            from services.lseg_watchdog_service import lseg_watchdog
+            await asyncio.to_thread(lseg_watchdog.check_health)
+        except Exception as e:
+            logger.error(f'Scheduled LSEG watchdog failed: {e}')
 
     def stop(self) -> None:
         """Shut down the scheduler."""

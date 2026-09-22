@@ -158,3 +158,18 @@ def get_system_logs(lines: int = 50):
         
     return {"services": results}
 
+
+@router.get('/lseg-watchdog')
+def get_lseg_watchdog_status():
+    """Retrieve current LSEG Bridge and NordLayer VPN watchdog health status."""
+    from services.lseg_watchdog_service import lseg_watchdog
+    return lseg_watchdog.get_status()
+
+
+@router.post('/lseg-watchdog/check')
+def trigger_lseg_watchdog_check():
+    """Manually trigger an immediate health check probe against the LSEG Bridge."""
+    from services.lseg_watchdog_service import lseg_watchdog
+    return lseg_watchdog.check_health()
+
+
