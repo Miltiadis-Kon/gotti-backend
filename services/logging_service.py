@@ -74,6 +74,18 @@ class LoggingService:
         """Log errors."""
         self._log('ERROR', Colors.RED, message)
 
+    def warning(self, message: str) -> None:
+        """Log warnings."""
+        self._log('WARN', Colors.YELLOW, message)
+
+    def warn(self, message: str) -> None:
+        """Alias for warning."""
+        self._log('WARN', Colors.YELLOW, message)
+
+    def debug(self, message: str) -> None:
+        """Log debug messages."""
+        self._log('DEBUG', Colors.GRAY, message)
+
     def info(self, message: str) -> None:
         """Log general info."""
         self._log('INFO', Colors.WHITE, message)

@@ -257,20 +257,99 @@ class ClientService:
 
     # ── User Profile & Identity ──────────────────────────────────────
 
+    def register_new_user(
+        self,
+        email: str,
+        risk_level: int = 2,
+        risk_score: int | None = None,
+        answers: dict[str, Any] | None = None
+    ) -> UserProfile:
+        """Register a completely fresh new user with a clean primary sub-account and zero demo balance."""
+        user_id = f"usr-{email.split('@')[0].replace('.', '-').lower()}"
+        existing = repo.get_user(user_id)
+        if existing:
+            # Update existing profile
+            updates: dict[str, Any] = {
+                "riskLevel": risk_level,
+                "isLoggedIn": True
+            }
+            if risk_score is not None:
+                updates["riskScore"] = risk_score
+            if answers:
+                updates["answers"] = answers
+            return self.update_user_profile(user_id, updates)
+
+        strategy_info = ETF_STRATEGY_DETAILS.get(risk_level, ETF_STRATEGY_DETAILS[2])
+        strategy_name = strategy_info["strategyName"]
+        sub_id = f"sub-{user_id}-lvl{risk_level}"
+
+        user = repo.create_user(
+            user_id=user_id,
+            email=email,
+            name=email.split('@')[0].capitalize(),
+            risk_level=risk_level,
+            risk_score=risk_score or (15 if risk_level == 1 else 25 if risk_level == 2 else 35),
+            strategy_name=strategy_name,
+            active_sub_account_id=sub_id,
+            total_cash_balance=0.0,
+            answers=answers or {}
+        )
+
+        # Create the initial primary sub-account with zero initial balance
+        repo.create_sub_account(
+            sub_account_id=sub_id,
+            user_id=user_id,
+            name=f"Level {risk_level}: {strategy_name}",
+            risk_level=risk_level,
+            strategy_name=strategy_name,
+            allocated_capital=0.0,
+            current_value=0.0,
+            cash_balance=0.0,
+            invested_amount=0.0,
+            pnl=0.0,
+            pnl_percentage=0.0,
+            status="active",
+            holdings_count=len(strategy_info.get("holdings", [])),
+            description=strategy_info.get("tagline", "")
+        )
+
+        logger.info(f"Registered new client: {user_id} ({email}) at Risk Level {risk_level}")
+        return user
+
     def get_or_create_user(self, user_id: str = "usr-gotti-demo", email: str = "investor@gotti.ai") -> UserProfile:
         """Get the active user profile, or create it if missing."""
         user = repo.get_user(user_id)
         if not user:
+            is_demo = user_id == "usr-gotti-demo"
             user = repo.create_user(
                 user_id=user_id,
                 email=email,
-                name="Gotti Investor",
-                risk_level=3,
-                risk_score=26,
+                name="Gotti Investor" if is_demo else email.split('@')[0].capitalize(),
+                risk_level=2,
+                risk_score=26 if is_demo else 25,
                 strategy_name="Steady Grind ETF",
-                active_sub_account_id="sub-main-01",
-                total_cash_balance=11457.05
+                active_sub_account_id="sub-main-02" if is_demo else f"sub-{user_id}-lvl2",
+                total_cash_balance=11457.05 if is_demo else 0.0,
+                answers={"1": "B", "2": "C", "3": "C", "4": "C", "5": "C", "6": "B", "7": "B", "8": "C", "9": "C", "10": "C"} if is_demo else {}
             )
+            if not is_demo:
+                strategy_info = ETF_STRATEGY_DETAILS.get(2, ETF_STRATEGY_DETAILS[2])
+                repo.create_sub_account(
+                    sub_account_id=f"sub-{user_id}-lvl2",
+                    user_id=user_id,
+                    name=f"Level 2: {strategy_info['strategyName']}",
+                    risk_level=2,
+                    strategy_name=strategy_info['strategyName'],
+                    allocated_capital=0.0,
+                    current_value=0.0,
+                    cash_balance=0.0,
+                    invested_amount=0.0,
+                    pnl=0.0,
+                    pnl_percentage=0.0,
+                    status="active",
+                    holdings_count=len(strategy_info.get("holdings", [])),
+                    description=strategy_info.get("tagline", "")
+                )
         return user
 
     def update_user_profile(self, user_id: str, updates: dict[str, Any]) -> UserProfile:
@@ -319,9 +398,9 @@ class ClientService:
         for idx, asset in enumerate(universe):
             weight = asset["weight"]
             allocated = round(nav * weight, 2)
-            mock_pnl_ratio = (0.08 if idx % 2 == 0 else -0.03) + (account.riskLevel * 0.02)
-            unrealized_pnl = round(allocated * mock_pnl_ratio, 2)
-            pnl_pct = round(mock_pnl_ratio * 100, 2)
+            # Live PnL should be calculated from real cost basis vs current market price
+            unrealized_pnl = 0.0
+            pnl_pct = 0.0
             base_price = asset["basePrice"]
             shares = round(allocated / base_price, 2) if base_price > 0 else 0.0
 

@@ -34,11 +34,19 @@ class Settings:
     alpaca_api_key: str = field(default_factory=lambda: os.getenv('ALPACA_API_KEY', ''))
     alpaca_api_secret: str = field(default_factory=lambda: os.getenv('ALPACA_API_SECRET', ''))
     gemini_api_key: str = field(default_factory=lambda: os.getenv('GEMINI_API_KEY', ''))
-    gemini_model: str = field(default_factory=lambda: os.getenv('GEMINI_MODEL', 'gemini-2.0-flash'))
+    gemini_model: str = field(default_factory=lambda: (
+        'gemini-3.5-flash-lite'
+        if not os.getenv('GEMINI_MODEL') or os.getenv('GEMINI_MODEL', '').startswith(('gemini-2.', 'gemini-1.'))
+        else os.getenv('GEMINI_MODEL', 'gemini-3.5-flash-lite').strip()
+    ))
     marketaux_api_token: str = field(default_factory=lambda: os.getenv('MARKETAUX_API_TOKEN', ''))
     lseg_enabled: bool = field(default_factory=lambda: os.getenv('LSEG_ENABLED', 'true').lower() == 'true')
-    lseg_bridge_url: str = field(default_factory=lambda: os.getenv('LSEG_BRIDGE_URL', 'http://127.0.0.1:5000/api/v1'))
-    lseg_bridge_timeout: int = field(default_factory=lambda: int(os.getenv('LSEG_BRIDGE_TIMEOUT', '10')))
+    lseg_bridge_url: str = field(default_factory=lambda: os.getenv('LSEG_BRIDGE_URL', 'http://lseghost.dufercohellasgr.nordlayerconnect.net:5000/api/v1'))
+    lseg_backup_url: str = field(default_factory=lambda: os.getenv('LSEG_BACKUP_URL', 'http://127.0.0.1:5000/api/v1'))
+    lseg_bridge_timeout: int = field(default_factory=lambda: int(os.getenv('LSEG_BRIDGE_TIMEOUT', '30')))
+    lseg_app_key: str = field(default_factory=lambda: os.getenv('LSEG_APP_KEY', ''))
+    candle_collection_enabled: bool = field(default_factory=lambda: os.getenv('CANDLE_COLLECTION_ENABLED', 'false').lower() == 'true')
+    candle_stocks_per_sector: int = field(default_factory=lambda: int(os.getenv('CANDLE_STOCKS_PER_SECTOR', '50')))
 
     # ── 4. Telegram Notifications ────────────────────────────────────
     telegram_enabled: bool = field(default_factory=lambda: os.getenv('TELEGRAM_ENABLED', 'false').lower() == 'true')
@@ -57,6 +65,8 @@ class Settings:
 
     # ── 6. Simulation & Strategy Parameters ──────────────────────────
     nav_sync_interval: int = field(default_factory=lambda: int(os.getenv('NAV_SYNC_INTERVAL', '300')))
+    git_sync_interval: int = field(default_factory=lambda: int(os.getenv('GIT_SYNC_INTERVAL', '300')))
+    git_sync_enabled: bool = field(default_factory=lambda: os.getenv('GIT_SYNC_ENABLED', 'false').lower() == 'true')
     default_annual_fee: float = field(default_factory=lambda: float(os.getenv('DEFAULT_ANNUAL_FEE', '0.015')))
 
     # Dynamic DB configs cache
@@ -102,6 +112,12 @@ class Settings:
                 'BACKEND_PORT': 'port',
                 'NAV_SYNC_INTERVAL': 'nav_sync_interval',
                 'DEFAULT_ANNUAL_FEE': 'default_annual_fee',
+                'LSEG_BRIDGE_URL': 'lseg_bridge_url',
+                'LSEG_BACKUP_URL': 'lseg_backup_url',
+                'LSEG_BRIDGE_TIMEOUT': 'lseg_bridge_timeout',
+                'LSEG_APP_KEY': 'lseg_app_key',
+                'CANDLE_COLLECTION_ENABLED': 'candle_collection_enabled',
+                'CANDLE_STOCKS_PER_SECTOR': 'candle_stocks_per_sector',
             }
 
             for db_key, val in configs.items():

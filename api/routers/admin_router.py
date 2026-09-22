@@ -94,3 +94,67 @@ def update_system_configs(payload: dict[str, str]):
         "updated_keys": list(payload.keys()),
         "message": f"Successfully updated {len(payload)} configurations in MySQL database"
     }
+
+
+@router.get('/git-status')
+def get_git_status(fetch: bool = True):
+    """
+    Check the git status, current branch, and pending remote commits across all 4 microservices.
+    """
+    try:
+        from services.git_sync_service import git_sync_service
+        return git_sync_service.check_all_status(do_fetch=fetch)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Git status check failed: {str(e)}")
+
+
+@router.post('/git-sync')
+def trigger_git_sync(auto_reload: bool = True):
+    """
+    Manually trigger git fetch & pull across all 4 microservices.
+    If updates are pulled and auto_reload is True, triggers automated Docker container reload.
+    """
+    try:
+        from services.git_sync_service import git_sync_service
+        return git_sync_service.sync_all(auto_reload=auto_reload)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Git sync failed: {str(e)}")
+
+
+@router.get('/system-logs')
+def get_system_logs(lines: int = 50):
+    """
+    Fetch the running status and recent logs for all 4 microservices via Docker.
+    Requires docker socket to be mounted.
+    """
+    import subprocess
+    import os
+    
+    services = ["gotti-backend-api", "stock-alchemist-app", "gotti-visualize-api", "gotti-frontend-app", "gotti-mysql"]
+    results = []
+    
+    for srv in services:
+        status_cmd = ["docker", "inspect", "-f", "{{.State.Status}}", srv]
+        try:
+            status = subprocess.check_output(status_cmd, text=True, timeout=5).strip()
+        except Exception:
+            status = "not running"
+            
+        logs = ""
+        if status == "running":
+            log_cmd = ["docker", "logs", "--tail", str(lines), srv]
+            try:
+                logs_raw = subprocess.check_output(log_cmd, stderr=subprocess.STDOUT, text=True, timeout=5)
+                # Take last N lines
+                logs = "\n".join(logs_raw.splitlines()[-lines:])
+            except Exception as e:
+                logs = f"Error reading logs: {str(e)}"
+                
+        results.append({
+            "service": srv,
+            "status": status,
+            "logs": logs
+        })
+        
+    return {"services": results}
+

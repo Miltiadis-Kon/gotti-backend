@@ -16,20 +16,12 @@ router = APIRouter(tags=["Client & Auth"])
 def register_user(request: UserRegisterRequest):
     """Register a new client profile."""
     try:
-        user = client_service.get_or_create_user(
-            user_id=f"usr-{request.email.split('@')[0]}",
-            email=request.email
+        return client_service.register_new_user(
+            email=request.email,
+            risk_level=request.riskLevel or 2,
+            risk_score=request.riskScore,
+            answers=request.answers
         )
-        if request.riskLevel or request.answers:
-            user = client_service.update_user_profile(
-                user_id=user.id,
-                updates={
-                    "riskLevel": request.riskLevel,
-                    "riskScore": request.riskScore,
-                    "answers": request.answers
-                }
-            )
-        return user
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

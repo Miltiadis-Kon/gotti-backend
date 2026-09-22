@@ -10,6 +10,7 @@ RiskLevelType = Literal[1, 2, 3]
 class UserProfile(BaseModel):
     id: str
     email: str
+    name: str | None = None
     riskLevel: int = Field(default=2, alias="riskLevel")
     riskScore: int | None = Field(default=None, alias="riskScore")
     strategyName: str = Field(default="Steady Grind ETF", alias="strategyName")

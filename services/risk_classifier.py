@@ -59,13 +59,35 @@ def evaluate_stock_risk_dual_horizon(
     Evaluates baseline stock risk using 63-day (Quarterly) and 252-day (Annual) dual horizons.
     Combines volatility, drawdown severity, market beta, tail risk, and size/liquidity metrics.
     """
+    # Normalize datetime indices to tz-naive
+    s_stock = stock_prices.copy()
+    s_bench = benchmark_prices.copy()
+    try:
+        s_stock.index = pd.to_datetime(s_stock.index).tz_localize(None).normalize()
+    except Exception:
+        pass
+    try:
+        s_bench.index = pd.to_datetime(s_bench.index).tz_localize(None).normalize()
+    except Exception:
+        pass
+
     # Align returns
-    r_stock_all = stock_prices.pct_change().dropna()
-    r_bench_all = benchmark_prices.pct_change().dropna()
+    r_stock_all = s_stock.pct_change().dropna()
+    r_bench_all = s_bench.pct_change().dropna()
 
     combined = pd.concat([r_stock_all, r_bench_all], axis=1, join="inner").dropna()
     if len(combined) < 63:
-        raise ValueError(f"Insufficient overlapping price observations: {len(combined)} (need at least 63)")
+        min_len = min(len(s_stock), len(s_bench))
+        if min_len >= 64:
+            s_stock_tail = s_stock.iloc[-min_len:]
+            s_bench_tail = s_bench.iloc[-min_len:]
+            r_s = s_stock_tail.pct_change().dropna().values
+            r_b = s_bench_tail.pct_change().dropna().values
+            common_idx = pd.RangeIndex(len(r_s))
+            combined = pd.DataFrame({"stock": r_s, "bench": r_b}, index=common_idx)
+            s_stock = pd.Series(s_stock_tail.values, index=pd.RangeIndex(len(s_stock_tail)))
+        else:
+            raise ValueError(f"Insufficient overlapping price observations: {len(combined)} (need at least 63)")
 
     # Annual window (252 days)
     combined_252 = combined.tail(252)
@@ -75,8 +97,8 @@ def evaluate_stock_risk_dual_horizon(
     # Quarterly window (63 days)
     combined_63 = combined_252.tail(63)
     r_stock_63 = combined_63.iloc[:, 0]
-    p_stock_63 = stock_prices.loc[combined_63.index]
-    p_stock_252 = stock_prices.loc[combined_252.index]
+    p_stock_63 = s_stock.loc[combined_63.index] if combined_63.index.isin(s_stock.index).all() else s_stock.tail(63)
+    p_stock_252 = s_stock.loc[combined_252.index] if combined_252.index.isin(s_stock.index).all() else s_stock.tail(252)
 
     # 1. Volatility & Acceleration
     vol_252 = float(r_stock_252.std() * np.sqrt(252)) if len(r_stock_252) > 1 else 0.20
@@ -188,6 +210,7 @@ class RiskClassifier:
             index=dates
         )
         self._benchmark_cache = synthetic_prices
+        self._cache_date = today_str
         return self._benchmark_cache
 
     def evaluate_ticker_quantitative(

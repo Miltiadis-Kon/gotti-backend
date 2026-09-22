@@ -73,3 +73,56 @@ python services/valuation_sync.py
 # Seed ETF Vaults
 python db/seed_vaults.py
 ```
+
+---
+
+## 📋 Ecosystem Interface Summary Table
+
+| Interface | Service | Port | URL | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| **Ticker Risk & Earnings Evaluator** | `gotti-backend` | `10000` | [`http://localhost:10000/evaluate`](http://localhost:10000/evaluate) | 5-Pillar CRS score, dual-horizon vol/DD, Beta, CVaR 95%, earnings gating simulation & L1–L3 permissions. |
+| **Strategy Hub & Backtester** | `gotti-visualize` | `8000` | [`http://localhost:8000/strategies`](http://localhost:8000/strategies) | Interactive Lumibot strategy execution, backtesting metrics, trade setup ledger & S/R inflections. |
+| **Interactive Key Levels Chart** | `gotti-visualize` | `8000` | [`http://localhost:8000/chart`](http://localhost:8000/chart) | Dynamic Candlestick chart with Support/Resistance, Fibonacci retracements & trade markers. |
+| **News Sentiment & Signals Dashboard** | `stock-alchemist` | `8080` | [`http://localhost:8080/`](http://localhost:8080/) | Live Market News Feed & FinBERT Sentiment Scores, Signal Generator & vitals. |
+| **Client Trading App** | `gotti-frontend` | `3000` | [`http://localhost:3000`](http://localhost:3000) | Next.js 14 Dashboard, Segregated Sub-Accounts Hub, Onboarding Quiz & Ledger. |
+
+
+---
+
+## Detailed Endpoint Breakdown by Module
+
+### A. Gotti Backend (`http://localhost:10000`)
+- **Web UI & Docs**: Swagger at [`http://localhost:10000/docs`](http://localhost:10000/docs), ReDoc at [`http://localhost:10000/redoc`](http://localhost:10000/redoc)
+- **Health & Root**: `GET /health`, `GET /`
+- **ETF Vaults**: `GET /api/etf/vaults/`, `GET /api/etf/vaults/{id}/performance`
+- **Holdings & Ledger**: `POST /api/etf/deposit`, `POST /api/etf/withdraw`, `GET /api/etf/holdings/`
+- **Client Auth & Profile**: `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/user/profile`, `GET /api/user/financials`, `GET /api/user/snapshot`
+- **Sub-Accounts & Transfers**: `GET /api/sub-accounts`, `POST /api/sub-accounts/{id}/fund`, `POST /api/sub-accounts/transfer`
+- **Quantitative Signals & Risk**: `GET /api/signals/`, `GET /api/signals/{ticker}/evaluate`, `GET /api/signals/{ticker}/earnings`, `POST /api/signals/evaluate-batch`, `GET /api/signals/{ticker}/can-trade/{level}`
+- **Stock Market Data**: `GET /api/stock_data/{ticker}`, `GET /api/orders/`
+- **Admin**: `POST /api/admin/sync-nav`, `POST /api/admin/classify-signals`, `GET /api/admin/vault-status`, `GET /api/admin/config`, `GET /api/admin/git-status`, `POST /api/admin/git-sync`
+- **WebSocket Server**: `ws://localhost:8001` (Trade Publisher to Gotti Visualize)
+
+### B. Stock Alchemist (`http://localhost:8080`)
+- **Custom Web Interfaces**:
+  - **Home Dashboard & News Feed**: [`http://localhost:8080/`](http://localhost:8080/) or [`http://localhost:8080/news`](http://localhost:8080/news) (`src/templates/index.html`)
+  - **Live Logs Console**: [`http://localhost:8080/logs`](http://localhost:8080/logs) (`src/templates/logs.html`)
+  - **Interactive Docs**: Swagger UI at [`http://localhost:8080/docs`](http://localhost:8080/docs)
+- **Health**: `GET /health`
+- **Market News & Sentiment**: `GET /api/news` (Paginated list of headlines, FinBERT sentiment ratings & analysis)
+- **Signals**: `GET /api/signals`, `POST /generate-signal`
+- **WebSockets**:
+  - `ws://localhost:8080/ws/signals` (Real-time signal stream for Gotti Backend & trading bots)
+  - `ws://localhost:8080/ws/news` (Real-time live news headlines & sentiment)
+- **Analysis & Testing**: `POST /saturday-analysis`, `POST /test-db`, `POST /test-gemini`
+- **Dashboard & Logs API**: `GET /`, `GET /logs`, `GET /api/logs`
+
+### C. Gotti Visualize (`http://localhost:8000`)
+- **Custom Web Interface**:
+  - **Stock Chart & Key Levels UI**: [`http://localhost:8000/chart`](http://localhost:8000/chart) (or `http://localhost:8000/plots/stock_chart.html`)
+  - **Interactive Docs**: Swagger UI at [`http://localhost:8000/docs`](http://localhost:8000/docs)
+- **Health**: `GET /health`
+- **Charts API**: `GET /chart/{ticker}`, `GET /plots/stock_chart.html`
+- **Strategies API**: `GET /strategies`, `POST /strategy/run`, `GET /db-data`
+
+

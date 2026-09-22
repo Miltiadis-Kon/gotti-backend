@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Gotti Quantitative Ticker Risk & Earnings Evaluator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        dark: {
+                            bg: '#0a0d12',
+                            card: '#121721',
+                            border: '#242e3d',
+                            hover: '#1b2331',
+                            text: '#cbd5e1',
+                            muted: '#7e8b9f',
+                        },
+                        tier1: '#10b981',
+                        tier2: '#6366f1',
+                        tier3: '#f43f5e',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: #0a0d12; color: #cbd5e1; }
+        .gradient-tier1 { background: linear-gradient(135deg, rgba(16,185,129,0.15), rgba(16,185,129,0.02)); border-color: rgba(16,185,129,0.4); }
+        .gradient-tier2 { background: linear-gradient(135deg, rgba(99,102,241,0.15), rgba(99,102,241,0.02)); border-color: rgba(99,102,241,0.4); }
+        .gradient-tier3 { background: linear-gradient(135deg, rgba(244,63,94,0.15), rgba(244,63,94,0.02)); border-color: rgba(244,63,94,0.4); }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col bg-dark-bg text-dark-text">
+
+    <!-- Navbar -->
+    <header class="border-b border-dark-border bg-dark-card/90 backdrop-blur sticky top-0 z-30 px-4 lg:px-8 py-3.5 flex flex-wrap items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+            <div class="h-9 w-9 rounded-xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-xl shadow-inner">
+                📐
+            </div>
+            <div>
+                <div class="flex items-center gap-2">
+                    <h1 class="text-lg font-bold tracking-tight text-white">Gotti Quantitative Risk Engine</h1>
+                    <span class="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 font-bold">5-Pillar CRS + Earnings</span>
+                </div>
+                <p class="text-xs text-dark-muted">Dual-Horizon Volatility, Drawdowns, Beta, CVaR 95%, Size & Earnings Gating</p>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-2 sm:gap-3">
+            <a href="/docs" target="_blank" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-dark-hover hover:bg-dark-border border border-dark-border text-indigo-400 transition-colors flex items-center gap-1.5">
+                <span>API Swagger</span>
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+            </a>
+            <a href="http://localhost:8080/" target="_blank" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-dark-hover hover:bg-dark-border border border-dark-border text-dark-text transition-colors">
+                Stock Alchemist
+            </a>
+            <a href="http://localhost:8000/chart" target="_blank" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-dark-hover hover:bg-dark-border border border-dark-border text-dark-text transition-colors">
+                Gotti Visualize
+            </a>
+            <a href="http://localhost:3000/" target="_blank" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition-colors">
+                Client App
+            </a>
+        </div>
+    </header>
+
+    <main class="flex-1 px-4 lg:px-8 py-6 max-w-7xl w-full mx-auto space-y-6">
+
+        <!-- Ticker Input & Simulation Control Card -->
+        <section class="bg-dark-card border border-dark-border rounded-xl p-5 shadow-sm space-y-4">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-dark-border pb-3">
+                <div>
+                    <h2 class="text-sm font-bold text-white uppercase tracking-wider">Quantitative Single-Stock Risk Assessment</h2>
+                    <p class="text-xs text-dark-muted">Calculate Composite Risk Score (CRS), Tier Classification (L1–L3), and Earnings Multipliers</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-1.5">
+                    <span class="text-xs text-dark-muted mr-1">Quick Load:</span>
+                    <button onclick="quickEvaluate('KO')" class="px-2 py-1 bg-dark-bg hover:bg-dark-hover border border-dark-border rounded text-xs font-mono text-emerald-400">KO (L1)</button>
+                    <button onclick="quickEvaluate('AAPL')" class="px-2 py-1 bg-dark-bg hover:bg-dark-hover border border-dark-border rounded text-xs font-mono text-emerald-400">AAPL (L1)</button>
+                    <button onclick="quickEvaluate('NVDA')" class="px-2 py-1 bg-dark-bg hover:bg-dark-hover border border-dark-border rounded text-xs font-mono text-indigo-400">NVDA (L2)</button>
+                    <button onclick="quickEvaluate('AMD')" class="px-2 py-1 bg-dark-bg hover:bg-dark-hover border border-dark-border rounded text-xs font-mono text-indigo-400">AMD (L2)</button>
+                    <button onclick="quickEvaluate('TSLA')" class="px-2 py-1 bg-dark-bg hover:bg-dark-hover border border-dark-border rounded text-xs font-mono text-rose-400">TSLA (L3)</button>
+                    <button onclick="quickEvaluate('MSTR')" class="px-2 py-1 bg-dark-bg hover:bg-dark-hover border border-dark-border rounded text-xs font-mono text-rose-400">MSTR (L3)</button>
+                    <button onclick="quickEvaluate('MARA')" class="px-2 py-1 bg-dark-bg hover:bg-dark-hover border border-dark-border rounded text-xs font-mono text-rose-400">MARA (L3)</button>
+                </div>
+            </div>
+
+            <div class="grid sm:grid-cols-12 gap-4 items-end">
+                <div class="sm:col-span-4">
+                    <label class="block text-xs font-medium text-dark-muted mb-1.5">Stock Symbol / Ticker</label>
+                    <div class="relative">
+                        <input 
+                            type="text" 
+                            id="ticker-input" 
+                            value="NVDA" 
+                            class="w-full bg-dark-bg border border-dark-border rounded-lg pl-3 pr-8 py-2 text-sm font-mono uppercase font-bold text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                            placeholder="e.g. NVDA"
+                            onkeydown="if(event.key==='Enter') runEvaluation()"
+                        />
+                        <button onclick="runEvaluation()" class="absolute right-2 top-2 text-dark-muted hover:text-white">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="sm:col-span-3">
+                    <label class="block text-xs font-medium text-dark-muted mb-1.5 flex justify-between">
+                        <span>Simulate Days to Next Earnings</span>
+                        <span id="next-earnings-val" class="text-indigo-400 font-mono">Auto</span>
+                    </label>
+                    <input 
+                        type="range" 
+                        id="override-next-slider" 
+                        min="-1" 
+                        max="45" 
+                        value="-1" 
+                        class="w-full accent-indigo-500 cursor-pointer"
+                        oninput="updateSliderLabels()"
+                    />
+                </div>
+
+                <div class="sm:col-span-3">
+                    <label class="block text-xs font-medium text-dark-muted mb-1.5 flex justify-between">
+                        <span>Simulate Days Since Last Earnings</span>
+                        <span id="last-earnings-val" class="text-indigo-400 font-mono">Auto</span>
+                    </label>
+                    <input 
+                        type="range" 
+                        id="override-last-slider" 
+                        min="-1" 
+                        max="45" 
+                        value="-1" 
+                        class="w-full accent-indigo-500 cursor-pointer"
+                        oninput="updateSliderLabels()"
+                    />
+                </div>
+
+                <div class="sm:col-span-2">
+                    <button 
+                        onclick="runEvaluation()" 
+                        id="btn-eval" 
+                        class="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg text-xs flex items-center justify-center gap-1.5 shadow transition-all"
+                    >
+                        <span>⚡ Run Evaluation</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Evaluation Results Display Container -->
+        <div id="eval-results-container" class="space-y-6">
+            <div class="bg-dark-card border border-dark-border rounded-xl p-12 text-center text-dark-muted">
+                <div class="animate-pulse flex flex-col items-center gap-3">
+                    <div class="h-8 w-8 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400">📊</div>
+                    <span>Initializing Quantitative Risk Engine...</span>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="border-t border-dark-border py-4 px-4 text-center text-xs text-dark-muted bg-dark-card/50">
+        Gotti Core Quantitative Engine · 3-Tier Alpaca Master Vaults · Module 4 Backbone
+    </footer>
+
+    <script>
+        function updateSliderLabels() {
+            const nextVal = parseInt(document.getElementById('override-next-slider').value);
+            const lastVal = parseInt(document.getElementById('override-last-slider').value);
+
+            document.getElementById('next-earnings-val').textContent = nextVal === -1 ? 'Auto' : (nextVal === 0 ? 'Event Day (0d)' : nextVal + 'd');
+            document.getElementById('last-earnings-val').textContent = lastVal === -1 ? 'Auto' : lastVal + 'd';
+        }
+
+        function quickEvaluate(ticker) {
+            document.getElementById('ticker-input').value = ticker;
+            document.getElementById('override-next-slider').value = -1;
+            document.getElementById('override-last-slider').value = -1;
+            updateSliderLabels();
+            runEvaluation();
+        }
+
+        async function runEvaluation() {
+            const ticker = document.getElementById('ticker-input').value.trim().toUpperCase();
+            if (!ticker) return;
+
+            const nextVal = parseInt(document.getElementById('override-next-slider').value);
+            const lastVal = parseInt(document.getElementById('override-last-slider').value);
+
+            let url = `/api/signals/${ticker}/evaluate`;
+            const params = [];
+            if (nextVal >= 0) params.push(`override_days_to_next=${nextVal}`);
+            if (lastVal >= 0) params.push(`override_days_since_last=${lastVal}`);
+            if (params.length) url += '?' + params.join('&');
+
+            const container = document.getElementById('eval-results-container');
+            const btn = document.getElementById('btn-eval');
+            btn.disabled = true;
+            btn.innerHTML = `<span>⏳ Evaluating...</span>`;
+
+            try {
+                const resp = await fetch(url);
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    throw new Error(err.detail || 'Evaluation failed');
+                }
+                const data = await resp.json();
+                renderEvaluation(data);
+            } catch (err) {
+                container.innerHTML = `
+                    <div class="bg-dark-card border border-rose-500/30 rounded-xl p-8 text-center text-rose-400 space-y-2">
+                        <div class="text-2xl font-bold">Evaluation Error</div>
+                        <p class="text-xs text-dark-muted">${err.message}</p>
+                    </div>
+                `;
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = `<span>⚡ Run Evaluation</span>`;
+            }
+        }
+
+        function renderEvaluation(data) {
+            const container = document.getElementById('eval-results-container');
+            const p = data.pillar_scores || {};
+            const e = data.earnings_event_risk || {};
+            const m = data.market_metrics || {};
+
+            let tierClass = 'gradient-tier2 border-indigo-500/40 text-indigo-400';
+            let tierBadge = 'bg-indigo-500/20 text-indigo-400 border-indigo-500/40';
+            if (data.assigned_risk_level === 1) {
+                tierClass = 'gradient-tier1 border-emerald-500/40 text-emerald-400';
+                tierBadge = 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40';
+            } else if (data.assigned_risk_level === 3) {
+                tierClass = 'gradient-tier3 border-rose-500/40 text-rose-400';
+                tierBadge = 'bg-rose-500/20 text-rose-400 border-rose-500/40';
+            }
+
+            const formatPct = (val) => (val !== undefined && val !== null) ? (val * 100).toFixed(1) + '%' : '--';
+            const formatNum = (val, dec=2) => (val !== undefined && val !== null) ? Number(val).toFixed(dec) : '--';
+
+            container.innerHTML = `
+                <!-- Top Hero Score Overview Card -->
+                <div class="grid md:grid-cols-12 gap-4 items-stretch">
+                    <!-- CRS Main Metric -->
+                    <div class="md:col-span-5 bg-dark-card border ${tierClass} rounded-xl p-6 flex flex-col justify-between shadow-lg space-y-4">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-mono uppercase tracking-widest text-dark-muted font-bold">Composite Risk Score</span>
+                            <span class="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold border ${tierBadge}">
+                                Level ${data.assigned_risk_level}: ${data.target_strategy_tier}
+                            </span>
+                        </div>
+
+                        <div class="flex items-baseline gap-4">
+                            <div class="text-5xl font-black font-mono tracking-tight text-white">${formatNum(data.adjusted_crs, 1)}</div>
+                            <div class="space-y-0.5">
+                                <div class="text-xs font-mono text-dark-muted">Base CRS: <span class="text-white font-bold">${formatNum(data.base_crs, 1)}</span></div>
+                                <div class="text-xs font-mono text-dark-muted">Earnings Mult: <span class="text-amber-400 font-bold">${formatNum(e.earnings_multiplier, 2)}x</span></div>
+                            </div>
+                        </div>
+
+                        <div class="space-y-2 border-t border-dark-border pt-3">
+                            <div class="text-xs text-dark-muted flex items-center justify-between">
+                                <span>Target ETF Vault:</span>
+                                <strong class="text-white font-mono">${data.target_etf_vault}</strong>
+                            </div>
+                            <div class="text-xs text-dark-muted flex items-center justify-between">
+                                <span>Hierarchical Permissions:</span>
+                                <div class="flex gap-1 font-mono text-xs font-bold">
+                                    ${(data.eligible_risk_levels || []).map(lvl => `
+                                        <span class="px-2 py-0.5 rounded bg-dark-bg border border-dark-border text-white">L${lvl}</span>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Earnings Gating Status Card -->
+                    <div class="md:col-span-7 bg-dark-card border border-dark-border rounded-xl p-6 flex flex-col justify-between shadow-sm space-y-4">
+                        <div class="flex items-center justify-between border-b border-dark-border pb-3">
+                            <div class="flex items-center gap-2">
+                                <span class="text-base">📅</span>
+                                <h3 class="text-sm font-bold text-white uppercase tracking-wider">Earnings Proximity & Gating Engine</h3>
+                            </div>
+                            <span class="px-2 py-0.5 rounded text-xs font-mono font-bold ${e.is_in_event_window ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40 animate-pulse' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'}">
+                                ${e.active_window || 'NORMAL'}
+                            </span>
+                        </div>
+
+                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
+                            <div class="bg-dark-bg p-2.5 rounded-lg border border-dark-border">
+                                <span class="text-dark-muted block text-[10px]">Days to Next</span>
+                                <span class="text-white font-bold text-sm">${e.days_to_next_earnings !== null ? e.days_to_next_earnings + 'd' : 'None'}</span>
+                            </div>
+                            <div class="bg-dark-bg p-2.5 rounded-lg border border-dark-border">
+                                <span class="text-dark-muted block text-[10px]">Days Since Last</span>
+                                <span class="text-white font-bold text-sm">${e.days_since_last_earnings !== null ? e.days_since_last_earnings + 'd' : 'None'}</span>
+                            </div>
+                            <div class="bg-dark-bg p-2.5 rounded-lg border border-dark-border">
+                                <span class="text-dark-muted block text-[10px]">Gap Severity</span>
+                                <span class="text-amber-400 font-bold text-sm">${formatNum(e.historical_gap_severity, 2)}x</span>
+                            </div>
+                            <div class="bg-dark-bg p-2.5 rounded-lg border border-dark-border">
+                                <span class="text-dark-muted block text-[10px]">Multiplier</span>
+                                <span class="text-rose-400 font-bold text-sm">${formatNum(e.earnings_multiplier, 2)}x</span>
+                            </div>
+                        </div>
+
+                        <div class="bg-dark-bg p-3 rounded-lg border border-dark-border text-xs text-dark-muted leading-relaxed">
+                            <strong class="text-white">Constraint Directive:</strong> ${e.allocation_constraint_summary || 'Standard risk weighting rules apply.'}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 5-Pillar Core Score Breakdown -->
+                <div class="bg-dark-card border border-dark-border rounded-xl p-5 shadow-sm space-y-4">
+                    <h3 class="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                        <span>📐</span> 5 Quantitative CRS Sub-Pillars
+                    </h3>
+
+                    <div class="grid sm:grid-cols-5 gap-3">
+                        <!-- Volatility -->
+                        <div class="bg-dark-bg border border-dark-border rounded-xl p-4 space-y-2">
+                            <div class="flex items-center justify-between text-xs">
+                                <span class="text-dark-muted font-medium">1. Volatility (25%)</span>
+                                <span class="font-mono font-bold text-white">${formatNum(p.volatility_score, 1)}</span>
+                            </div>
+                            <div class="w-full bg-dark-card h-2 rounded-full overflow-hidden">
+                                <div class="bg-indigo-500 h-full rounded-full" style="width: ${Math.min(100, p.volatility_score || 0)}%"></div>
+                            </div>
+                            <div class="text-[11px] font-mono text-dark-muted space-y-0.5 pt-1">
+                                <div>30D Vol: <span class="text-white">${formatPct(m.volatility_30d)}</span></div>
+                                <div>180D Vol: <span class="text-white">${formatPct(m.volatility_180d)}</span></div>
+                                <div>Vol Accel: <span class="text-indigo-400">${formatNum(m.volatility_acceleration, 2)}x</span></div>
+                            </div>
+                        </div>
+
+                        <!-- Drawdown -->
+                        <div class="bg-dark-bg border border-dark-border rounded-xl p-4 space-y-2">
+                            <div class="flex items-center justify-between text-xs">
+                                <span class="text-dark-muted font-medium">2. Drawdown (25%)</span>
+                                <span class="font-mono font-bold text-white">${formatNum(p.drawdown_score, 1)}</span>
+                            </div>
+                            <div class="w-full bg-dark-card h-2 rounded-full overflow-hidden">
+                                <div class="bg-rose-500 h-full rounded-full" style="width: ${Math.min(100, p.drawdown_score || 0)}%"></div>
+                            </div>
+                            <div class="text-[11px] font-mono text-dark-muted space-y-0.5 pt-1">
+                                <div>Max 30D DD: <span class="text-rose-400">${formatPct(m.max_drawdown_30d)}</span></div>
+                                <div>Max 180D DD: <span class="text-rose-400">${formatPct(m.max_drawdown_180d)}</span></div>
+                                <div>Ulcer Index: <span class="text-white">${formatNum(m.ulcer_index, 2)}</span></div>
+                            </div>
+                        </div>
+
+                        <!-- Beta -->
+                        <div class="bg-dark-bg border border-dark-border rounded-xl p-4 space-y-2">
+                            <div class="flex items-center justify-between text-xs">
+                                <span class="text-dark-muted font-medium">3. Beta (20%)</span>
+                                <span class="font-mono font-bold text-white">${formatNum(p.beta_score, 1)}</span>
+                            </div>
+                            <div class="w-full bg-dark-card h-2 rounded-full overflow-hidden">
+                                <div class="bg-amber-500 h-full rounded-full" style="width: ${Math.min(100, p.beta_score || 0)}%"></div>
+                            </div>
+                            <div class="text-[11px] font-mono text-dark-muted space-y-0.5 pt-1">
+                                <div>Beta (vs SPY): <span class="text-amber-400 font-bold">${formatNum(m.beta, 2)}</span></div>
+                                <div>Correlation: <span class="text-white">${formatNum(m.correlation_spy, 2)}</span></div>
+                                <div>Classification: <span class="text-white">${m.beta > 1.25 ? 'High Beta' : m.beta < 0.85 ? 'Low Beta' : 'Market Beta'}</span></div>
+                            </div>
+                        </div>
+
+                        <!-- Tail Risk -->
+                        <div class="bg-dark-bg border border-dark-border rounded-xl p-4 space-y-2">
+                            <div class="flex items-center justify-between text-xs">
+                                <span class="text-dark-muted font-medium">4. Tail Risk (15%)</span>
+                                <span class="font-mono font-bold text-white">${formatNum(p.tail_risk_score, 1)}</span>
+                            </div>
+                            <div class="w-full bg-dark-card h-2 rounded-full overflow-hidden">
+                                <div class="bg-purple-500 h-full rounded-full" style="width: ${Math.min(100, p.tail_risk_score || 0)}%"></div>
+                            </div>
+                            <div class="text-[11px] font-mono text-dark-muted space-y-0.5 pt-1">
+                                <div>CVaR (95%): <span class="text-purple-400 font-bold">${formatPct(m.cvar_95)}</span></div>
+                                <div>VaR (95%): <span class="text-white">${formatPct(m.var_95)}</span></div>
+                                <div>Kurtosis: <span class="text-white">${formatNum(m.kurtosis, 2)}</span></div>
+                            </div>
+                        </div>
+
+                        <!-- Size Factor -->
+                        <div class="bg-dark-bg border border-dark-border rounded-xl p-4 space-y-2">
+                            <div class="flex items-center justify-between text-xs">
+                                <span class="text-dark-muted font-medium">5. Size/Liq (15%)</span>
+                                <span class="font-mono font-bold text-white">${formatNum(p.size_liquidity_score, 1)}</span>
+                            </div>
+                            <div class="w-full bg-dark-card h-2 rounded-full overflow-hidden">
+                                <div class="bg-emerald-500 h-full rounded-full" style="width: ${Math.min(100, p.size_liquidity_score || 0)}%"></div>
+                            </div>
+                            <div class="text-[11px] font-mono text-dark-muted space-y-0.5 pt-1">
+                                <div>Market Cap: <span class="text-emerald-400 font-bold">${m.market_cap_str || '--'}</span></div>
+                                <div>Avg Volume: <span class="text-white">${m.avg_volume_str || '--'}</span></div>
+                                <div>Dollar Vol: <span class="text-white">${m.avg_dollar_volume_str || '--'}</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            quickEvaluate('NVDA');
+        });
+    </script>
+</body>
+</html>

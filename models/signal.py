@@ -30,7 +30,7 @@ class Evaluation(BaseModel):
     def overall_score(self) -> float | None:
         """Extract overall score from evaluation data."""
         if isinstance(self.data, dict):
-            score = self.data.get('overall_score')
+            score = self.data.get('overall_score') if self.data.get('overall_score') is not None else self.data.get('final_score')
             return float(score) if score is not None else None
         return None
 
@@ -38,7 +38,7 @@ class Evaluation(BaseModel):
     def signal(self) -> str | None:
         """Extract signal recommendation from evaluation data."""
         if isinstance(self.data, dict):
-            return self.data.get('signal')
+            return self.data.get('signal') or self.data.get('recommendation')
         return None
 
     @property

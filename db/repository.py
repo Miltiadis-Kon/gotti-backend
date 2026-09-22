@@ -231,6 +231,23 @@ class Repository:
                 results.append(Signal(**row))
             return results
 
+    def get_all_signaled_tickers(self) -> list[str]:
+        """Fetch all unique tickers that have generated signals, ordered by most recent signal date."""
+        with pool.get_cursor() as cursor:
+            cursor.execute(
+                '''SELECT ticker, MAX(created_at) as last_signal
+                   FROM signals
+                   WHERE ticker NOT LIKE '%/%'
+                     AND ticker NOT LIKE '%:%'
+                     AND ticker NOT LIKE '%+%'
+                     AND ticker NOT LIKE '%%=%%'
+                     AND ticker NOT LIKE '%USD'
+                   GROUP BY ticker
+                   ORDER BY last_signal DESC'''
+            )
+            rows = cursor.fetchall()
+            return [row['ticker'].strip().upper() for row in rows if row.get('ticker')]
+
     def get_evaluation(self, ticker: str) -> Evaluation | None:
         """Read the latest fundamental evaluation for a ticker from stock-alchemist."""
         with pool.get_cursor() as cursor:
@@ -369,6 +386,7 @@ class Repository:
         return UserProfile(
             id=row["id"],
             email=row["email"],
+            name=row.get("name"),
             riskLevel=row["risk_level"],
             riskScore=row.get("risk_score"),
             strategyName=row["strategy_name"],
@@ -639,6 +657,311 @@ class Repository:
                        ON DUPLICATE KEY UPDATE config_value = VALUES(config_value)''',
                     (key, str(val))
                 )
+
+    # ── Candlesticks & Market Data Operations ────────────────────────
+
+    def upsert_candles(self, bars: list[dict]) -> int:
+        """
+        Batch upsert standardized candle records into MySQL candles table.
+        Uses INSERT ... ON DUPLICATE KEY UPDATE.
+        Returns the number of rows inserted/updated.
+        """
+        if not bars:
+            return 0
+
+        chunk_size = 500
+        total_inserted = 0
+
+        sql = """
+            INSERT INTO candles
+            (ticker, ric, timeframe, timestamp, open, high, low, close, volume, vwap, source)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+            open = VALUES(open),
+            high = VALUES(high),
+            low = VALUES(low),
+            close = VALUES(close),
+            volume = VALUES(volume),
+            vwap = VALUES(vwap),
+            source = VALUES(source)
+        """
+
+        with pool.get_cursor() as cursor:
+            for i in range(0, len(bars), chunk_size):
+                chunk = bars[i:i + chunk_size]
+                params = [
+                    (
+                        b["ticker"],
+                        b["ric"],
+                        b["timeframe"],
+                        b["timestamp"],
+                        str(b["open"]) if b.get("open") is not None else None,
+                        str(b["high"]) if b.get("high") is not None else None,
+                        str(b["low"]) if b.get("low") is not None else None,
+                        str(b["close"]) if b.get("close") is not None else None,
+                        str(b["volume"]) if b.get("volume") is not None else None,
+                        str(b["vwap"]) if b.get("vwap") is not None else None,
+                        b.get("source", "lseg"),
+                    )
+                    for b in chunk
+                ]
+                cursor.executemany(sql, params)
+                total_inserted += len(chunk)
+
+        return total_inserted
+
+    def get_candles(
+        self,
+        ticker: str,
+        timeframe: str = "5 min",
+        start_date: str | None = None,
+        end_date: str | None = None,
+        limit: int = 1000,
+    ) -> list[dict]:
+        """Fetch candles for a given ticker and timeframe ordered chronologically."""
+        query = "SELECT * FROM candles WHERE ticker = %s AND timeframe = %s"
+        params: list[Any] = [ticker.upper(), timeframe]
+
+        if start_date:
+            query += " AND timestamp >= %s"
+            params.append(start_date)
+        if end_date:
+            query += " AND timestamp <= %s"
+            params.append(end_date)
+
+        query += " ORDER BY timestamp ASC LIMIT %s"
+        params.append(limit)
+
+        with pool.get_cursor() as cursor:
+            cursor.execute(query, tuple(params))
+            rows = cursor.fetchall()
+            # Format datetime and decimals for JSON serialization
+            for r in rows:
+                if isinstance(r.get("timestamp"), datetime):
+                    r["timestamp"] = r["timestamp"].isoformat()
+                for field in ("open", "high", "low", "close", "volume", "vwap"):
+                    if r.get(field) is not None:
+                        r[field] = float(r[field])
+            return rows
+
+    def get_candle_coverage(self, ticker: str, timeframe: str = "5 min") -> dict | None:
+        """
+        Fetch first_date, last_date, and candle_count for a ticker and timeframe.
+        Queries candle_coverage table with fallback to direct candles aggregation.
+        """
+        clean_ticker = ticker.strip().upper()
+        with pool.get_cursor() as cursor:
+            cursor.execute(
+                "SELECT ticker, timeframe, first_date, last_date, candle_count, last_synced_at "
+                "FROM candle_coverage WHERE ticker = %s AND timeframe = %s",
+                (clean_ticker, timeframe)
+            )
+            row = cursor.fetchone()
+            if row:
+                return {
+                    "ticker": row["ticker"],
+                    "timeframe": row["timeframe"],
+                    "first_date": row["first_date"],
+                    "last_date": row["last_date"],
+                    "candle_count": int(row["candle_count"]),
+                    "last_synced_at": row["last_synced_at"],
+                }
+
+            # Fallback to direct aggregation on candles if coverage row missing
+            cursor.execute(
+                "SELECT MIN(timestamp) as first_date, MAX(timestamp) as last_date, COUNT(*) as candle_count "
+                "FROM candles WHERE ticker = %s AND timeframe = %s",
+                (clean_ticker, timeframe)
+            )
+            agg = cursor.fetchone()
+            if agg and agg["first_date"] and agg["last_date"]:
+                now_utc = datetime.now(timezone.utc)
+                cov = {
+                    "ticker": clean_ticker,
+                    "timeframe": timeframe,
+                    "first_date": agg["first_date"],
+                    "last_date": agg["last_date"],
+                    "candle_count": int(agg["candle_count"]),
+                    "last_synced_at": now_utc,
+                }
+                cursor.execute(
+                    """INSERT INTO candle_coverage
+                       (ticker, timeframe, first_date, last_date, candle_count, last_synced_at)
+                       VALUES (%s, %s, %s, %s, %s, %s)
+                       ON DUPLICATE KEY UPDATE
+                         first_date = VALUES(first_date),
+                         last_date = VALUES(last_date),
+                         candle_count = VALUES(candle_count),
+                         last_synced_at = VALUES(last_synced_at)""",
+                    (cov["ticker"], cov["timeframe"], cov["first_date"], cov["last_date"],
+                     cov["candle_count"], cov["last_synced_at"])
+                )
+                return cov
+
+            return None
+
+    def get_all_candle_coverage(self, timeframe: str = "5 min") -> dict[str, dict]:
+        """Fetch all candle coverage entries for a timeframe as a dictionary keyed by uppercase ticker."""
+        with pool.get_cursor() as cursor:
+            cursor.execute(
+                "SELECT ticker, timeframe, first_date, last_date, candle_count, last_synced_at "
+                "FROM candle_coverage WHERE timeframe = %s",
+                (timeframe,)
+            )
+            rows = cursor.fetchall()
+            return {
+                row["ticker"].upper(): {
+                    "ticker": row["ticker"],
+                    "timeframe": row["timeframe"],
+                    "first_date": row["first_date"],
+                    "last_date": row["last_date"],
+                    "candle_count": int(row["candle_count"]),
+                    "last_synced_at": row["last_synced_at"],
+                }
+                for row in rows
+            }
+
+    def update_candle_coverage(
+        self,
+        ticker: str,
+        timeframe: str,
+        first_date: datetime,
+        last_date: datetime,
+        candle_count: int,
+    ) -> None:
+        """Upsert the candle_coverage summary record for a ticker and timeframe."""
+        clean_ticker = ticker.strip().upper()
+        now_utc = datetime.now(timezone.utc)
+        with pool.get_cursor() as cursor:
+            cursor.execute(
+                """INSERT INTO candle_coverage
+                   (ticker, timeframe, first_date, last_date, candle_count, last_synced_at)
+                   VALUES (%s, %s, %s, %s, %s, %s)
+                   ON DUPLICATE KEY UPDATE
+                     first_date = LEAST(first_date, VALUES(first_date)),
+                     last_date = GREATEST(last_date, VALUES(last_date)),
+                     candle_count = VALUES(candle_count),
+                     last_synced_at = VALUES(last_synced_at)""",
+                (clean_ticker, timeframe, first_date, last_date, candle_count, now_utc)
+            )
+
+    def get_available_ticker(self, ticker: str) -> dict | None:
+        """Fetch available_tickers record for a single ticker."""
+        sql = "SELECT ticker, name, exchange, sector, is_active FROM available_tickers WHERE ticker = %s LIMIT 1"
+        with pool.get_cursor() as cursor:
+            cursor.execute(sql, (ticker.upper().strip(),))
+            return cursor.fetchone()
+
+    def get_available_tickers_batch(self, tickers: list[str]) -> dict[str, dict]:
+        """Fetch available_tickers records for a list of ticker symbols, indexed by symbol."""
+        if not tickers:
+            return {}
+
+        placeholders = ", ".join(["%s"] * len(tickers))
+        sql = f"SELECT * FROM available_tickers WHERE ticker IN ({placeholders})"
+
+        with pool.get_cursor() as cursor:
+            cursor.execute(sql, tuple(t.upper() for t in tickers))
+            rows = cursor.fetchall()
+            result = {}
+            for r in rows:
+                meta = r.get("metadata")
+                if isinstance(meta, str):
+                    try:
+                        meta = json.loads(meta)
+                    except Exception:
+                        meta = {}
+                r["metadata"] = meta
+                result[r["ticker"].upper()] = r
+            return result
+
+    def get_all_available_tickers(self, active_only: bool = True) -> list[dict]:
+        """Fetch all available tickers from the available_tickers whitelist."""
+        sql = "SELECT ticker, name, exchange, sector, is_active FROM available_tickers"
+        if active_only:
+            sql += " WHERE is_active = TRUE"
+        sql += " ORDER BY ticker ASC"
+
+        with pool.get_cursor() as cursor:
+            cursor.execute(sql)
+            return cursor.fetchall()
+
+    # ── Candlestick Collection Jobs Tracking Operations ──────────────
+
+    def save_candle_job(
+        self,
+        job_id: str,
+        sector: str,
+        ticker: str,
+        ric: str,
+        status: str = "PENDING",
+    ) -> None:
+        """Create a new collection job entry for tracking."""
+        sql = """
+            INSERT INTO candle_collection_jobs
+            (id, sector, ticker, ric, overall_status, started_at)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+            overall_status = VALUES(overall_status),
+            started_at = VALUES(started_at)
+        """
+        now = datetime.now(timezone.utc)
+        with pool.get_cursor() as cursor:
+            cursor.execute(sql, (job_id, sector, ticker.upper(), ric.upper(), status, now))
+
+    def update_candle_job(self, job_id: str, **kwargs) -> None:
+        """Update fields of an existing collection job."""
+        if not kwargs:
+            return
+
+        set_clauses = []
+        values = []
+        for k, v in kwargs.items():
+            set_clauses.append(f"{k} = %s")
+            values.append(v)
+
+        values.append(job_id)
+        sql = f"UPDATE candle_collection_jobs SET {', '.join(set_clauses)} WHERE id = %s"
+
+        with pool.get_cursor() as cursor:
+            cursor.execute(sql, tuple(values))
+
+    def get_candle_jobs(
+        self,
+        sector: str | None = None,
+        status: str | None = None,
+        limit: int = 500,
+    ) -> list[dict]:
+        """Fetch candle collection jobs with optional filters."""
+        query = "SELECT * FROM candle_collection_jobs WHERE 1=1"
+        params: list[Any] = []
+
+        if sector:
+            query += " AND sector = %s"
+            params.append(sector)
+        if status:
+            query += " AND overall_status = %s"
+            params.append(status)
+
+        query += " ORDER BY created_at DESC LIMIT %s"
+        params.append(limit)
+
+        with pool.get_cursor() as cursor:
+            cursor.execute(query, tuple(params))
+            rows = cursor.fetchall()
+            for r in rows:
+                for dt_col in ("started_at", "completed_at", "created_at", "updated_at"):
+                    if isinstance(r.get(dt_col), datetime):
+                        r[dt_col] = r[dt_col].isoformat()
+            return rows
+
+    def get_completed_candle_tickers(self) -> set[str]:
+        """Fetch set of tickers that have completed or been evaluated (including NO_DATA/FAILED/SKIPPED) for candlestick collection."""
+        sql = "SELECT ticker FROM candle_collection_jobs WHERE overall_status IN ('COMPLETED', 'COMPLETED_WITH_WARNINGS', 'NO_DATA', 'FAILED', 'SKIPPED')"
+        with pool.get_cursor() as cursor:
+            cursor.execute(sql)
+            rows = cursor.fetchall()
+            return {r["ticker"].upper() for r in rows}
 
 
 # Singleton repository instance
