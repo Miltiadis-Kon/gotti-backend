@@ -47,6 +47,15 @@ class AlpacaClientFactory:
             'portfolio_value': str(account.portfolio_value),
         }
 
+    def get_positions(self, risk_level: int) -> list:
+        """Fetch all open positions for a vault from Alpaca."""
+        try:
+            client = self.get_client(risk_level)
+            return client.get_all_positions()
+        except Exception as e:
+            logger.warning(f"Could not fetch Alpaca positions for Level {risk_level}: {e}")
+            return []
+
 
 # Singleton factory instance
 alpaca_factory = AlpacaClientFactory()

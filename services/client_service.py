@@ -73,18 +73,19 @@ ETF_STRATEGY_DETAILS: dict[int, dict[str, Any]] = {
         "etfName": "Diamond Hands ETF",
         "tagline": "High-beta breakouts, small-cap alpha, and asymmetric acceleration.",
         "targetVolatility": "β > 1.35",
-        "assetUniverse": "High-Beta Equities, Emerging Small/Micro-Caps, Dynamic Breakout Stocks (MSTR, NVDA, RIVN, MARA, SOUN)",
+        "assetUniverse": "High-Beta Equities, Emerging Small/Micro-Caps, Dynamic Breakout Stocks (MSTR, TSLA, PLTR, COIN, NVDA, MARA)",
         "turnoverStrategy": "High-turnover tactical swing allocation and daily/weekly breakouts (200%+ annual)",
         "targetReturn": "20%+",
         "bestFor": "Aggressive / Speculative Alpha targeting asymmetric upside.",
         "color": "#ef4444",
-        "sampleTickers": ["MSTR", "NVDA", "RIVN", "SOUN", "MARA", "IONQ"],
+        "sampleTickers": ["MSTR", "TSLA", "PLTR", "COIN", "NVDA", "MARA"],
         "holdings": [
-            {"ticker": "MSTR", "name": "MicroStrategy Inc.", "weight": 0.30, "sector": "Bitcoin Treasury Alpha", "basePrice": 145.20},
-            {"ticker": "NVDA", "name": "Nvidia Alpha Momentum", "weight": 0.25, "sector": "AI Accelerator Swings", "basePrice": 128.40},
-            {"ticker": "RIVN", "name": "Rivian Automotive", "weight": 0.18, "sector": "EV Growth Momentum", "basePrice": 14.80},
-            {"ticker": "MARA", "name": "MARA Holdings Inc.", "weight": 0.15, "sector": "Digital Mining Infrastructure", "basePrice": 18.90},
-            {"ticker": "SOUN", "name": "SoundHound AI Inc.", "weight": 0.12, "sector": "Conversational AI Small-Cap", "basePrice": 5.40},
+            {"ticker": "MSTR", "name": "MicroStrategy Inc.", "weight": 0.25, "sector": "Bitcoin Treasury Alpha", "basePrice": 240.50},
+            {"ticker": "TSLA", "name": "Tesla Inc.", "weight": 0.20, "sector": "Autonomous & EV Momentum", "basePrice": 220.80},
+            {"ticker": "PLTR", "name": "Palantir Technologies", "weight": 0.18, "sector": "Enterprise AI Software", "basePrice": 42.50},
+            {"ticker": "COIN", "name": "Coinbase Global Inc.", "weight": 0.15, "sector": "Digital Asset Infrastructure", "basePrice": 210.00},
+            {"ticker": "NVDA", "name": "Nvidia Alpha Momentum", "weight": 0.12, "sector": "AI Accelerator Swings", "basePrice": 140.00},
+            {"ticker": "MARA", "name": "MARA Holdings Inc.", "weight": 0.10, "sector": "Digital Mining Infrastructure", "basePrice": 19.50},
         ]
     }
 }
@@ -152,14 +153,14 @@ class ClientService:
                     "name": "Level 3: Diamond Hands ETF",
                     "risk_level": 3,
                     "strategy_name": "Diamond Hands ETF",
-                    "allocated_capital": 30000.0,
-                    "current_value": 37400.00,
-                    "cash_balance": 3740.00,
-                    "invested_amount": 33660.00,
-                    "pnl": 7400.00,
-                    "pnl_percentage": 24.67,
+                    "allocated_capital": 1000000.00,
+                    "current_value": 1000000.00,
+                    "cash_balance": 1000000.00,
+                    "invested_amount": 0.00,
+                    "pnl": 0.00,
+                    "pnl_percentage": 0.00,
                     "status": "active",
-                    "holdings_count": 5,
+                    "holdings_count": 6,
                     "description": "High-Beta Equities, Emerging Small/Micro-Caps, Dynamic Breakout Stocks. Tactical momentum.",
                     "created_at": "2026-03-10"
                 }
@@ -390,6 +391,38 @@ class ClientService:
 
     def calculate_sub_account_holdings(self, account: SubAccountModel) -> list[HoldingPositionModel]:
         """Generate live holding allocations for a sub-account."""
+        # 1. If Alpaca paper account has live positions, fetch them dynamically
+        try:
+            from services.alpaca_client import alpaca_factory
+            alp_positions = alpaca_factory.get_positions(account.riskLevel)
+            if alp_positions and len(alp_positions) > 0:
+                nav = float(account.currentValue) or sum(float(p.market_value) for p in alp_positions)
+                positions: list[HoldingPositionModel] = []
+                for p in alp_positions:
+                    mkt_val = float(p.market_value)
+                    unrealized_pl = float(p.unrealized_pl)
+                    unrealized_plpc = float(p.unrealized_plpc) * 100.0
+                    weight = mkt_val / nav if nav > 0 else 0.0
+                    positions.append(
+                        HoldingPositionModel(
+                            ticker=p.symbol,
+                            name=f"{p.symbol} Live Position",
+                            weightPercentage=round(weight * 100, 1),
+                            weightDecimal=round(weight, 4),
+                            allocatedAmount=round(mkt_val, 2),
+                            unrealizedPnl=round(unrealized_pl, 2),
+                            unrealizedPnlPercentage=round(unrealized_plpc, 2),
+                            currentPrice=round(float(p.current_price), 2),
+                            sharesOwned=round(float(p.qty), 2),
+                            sector="High-Beta Alpha Execution",
+                            isPositive=unrealized_pl >= 0
+                        )
+                    )
+                return positions
+        except Exception as e:
+            logger.debug(f"Alpaca positions check notice for Level {account.riskLevel}: {e}")
+
+        # 2. Otherwise calculate target basket allocations against live NAV
         strategy_info = ETF_STRATEGY_DETAILS.get(account.riskLevel, ETF_STRATEGY_DETAILS[3])
         universe = strategy_info.get("holdings", [])
         nav = account.currentValue
@@ -398,25 +431,22 @@ class ClientService:
         for idx, asset in enumerate(universe):
             weight = asset["weight"]
             allocated = round(nav * weight, 2)
-            # Live PnL should be calculated from real cost basis vs current market price
-            unrealized_pnl = 0.0
-            pnl_pct = 0.0
-            base_price = asset["basePrice"]
+            base_price = asset.get("basePrice", 100.0)
             shares = round(allocated / base_price, 2) if base_price > 0 else 0.0
 
             positions.append(
                 HoldingPositionModel(
                     ticker=asset["ticker"],
                     name=asset["name"],
-                    weightPercentage=round(weight * 100),
+                    weightPercentage=round(weight * 100, 1),
                     weightDecimal=weight,
                     allocatedAmount=allocated,
-                    unrealizedPnl=unrealized_pnl,
-                    unrealizedPnlPercentage=pnl_pct,
+                    unrealizedPnl=0.0,
+                    unrealizedPnlPercentage=0.0,
                     currentPrice=base_price,
                     sharesOwned=shares,
                     sector=asset["sector"],
-                    isPositive=unrealized_pnl >= 0
+                    isPositive=True
                 )
             )
         return positions
