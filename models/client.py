@@ -109,6 +109,15 @@ class HoldingPositionModel(BaseModel):
     isPositive: bool
 
 
+
+class DailyPnLPointModel(BaseModel):
+    date: str
+    realizedPnl: float
+    cumulativePnl: float
+    volume: float
+    tradesCount: int
+    winRate: float
+
 class SubAccountMetrics(BaseModel):
     sharpeRatio: float
     maxDrawdown: str

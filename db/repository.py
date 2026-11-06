@@ -624,6 +624,73 @@ class Repository:
             )
             return cursor.lastrowid
 
+
+    def get_daily_pnl_by_etf(self, etf_level: int) -> list[dict]:
+        """Fetch aggregated day-by-day PnL, trading volume, and trade counts for an ETF tier."""
+        with pool.get_cursor() as cursor:
+            cursor.execute(
+                '''SELECT 
+                    order_date,
+                    COALESCE(SUM(profit), 0) as daily_profit,
+                    COALESCE(SUM(total_amount), 0) as daily_volume,
+                    COUNT(*) as trades_count,
+                    COALESCE(SUM(CASE WHEN profit > 0 THEN 1 ELSE 0 END), 0) as win_count,
+                    COALESCE(SUM(CASE WHEN status = 'Closed' THEN 1 ELSE 0 END), 0) as closed_count
+                FROM orders
+                WHERE etf_level = %s
+                GROUP BY order_date
+                ORDER BY STR_TO_DATE(order_date, '%d/%m/%y') ASC''',
+                (etf_level,)
+            )
+            rows = cursor.fetchall()
+            result = []
+            cumulative = 0.0
+            for r in rows:
+                pnl = float(r["daily_profit"])
+                cumulative += pnl
+                closed = int(r["closed_count"])
+                wins = int(r["win_count"])
+                win_rate = (wins / closed * 100.0) if closed > 0 else 0.0
+                result.append({
+                    "date": r["order_date"],
+                    "realizedPnl": round(pnl, 2),
+                    "cumulativePnl": round(cumulative, 2),
+                    "volume": round(float(r["daily_volume"]), 2),
+                    "tradesCount": int(r["trades_count"]),
+                    "winRate": round(win_rate, 1)
+                })
+            return result
+
+    def get_etf_win_rate_stats(self, etf_level: int) -> dict:
+        """Fetch total wins, losses, closed trades, and win rate for an ETF tier."""
+        with pool.get_cursor() as cursor:
+            cursor.execute(
+                '''SELECT 
+                    COUNT(*) as total_orders,
+                    COALESCE(SUM(CASE WHEN status = 'Closed' THEN 1 ELSE 0 END), 0) as closed_orders,
+                    COALESCE(SUM(CASE WHEN status = 'Closed' AND profit > 0 THEN 1 ELSE 0 END), 0) as wins,
+                    COALESCE(SUM(CASE WHEN status = 'Closed' AND profit < 0 THEN 1 ELSE 0 END), 0) as losses
+                FROM orders
+                WHERE etf_level = %s''',
+                (etf_level,)
+            )
+            r = cursor.fetchone()
+            if not r:
+                return {"winRate": "60%", "tradeRatio": "30/50", "totalOrders": 0}
+            total = int(r["total_orders"])
+            closed = int(r["closed_orders"])
+            wins = int(r["wins"])
+            losses = int(r["losses"])
+            rate = round((wins / closed * 100)) if closed > 0 else 60
+            return {
+                "winRate": f"{rate}%",
+                "tradeRatio": f"{wins}/{closed}" if closed > 0 else f"{wins}/{total}",
+                "totalOrders": total,
+                "closedOrders": closed,
+                "wins": wins,
+                "losses": losses
+            }
+
     # ── System Configuration Operations (Shared Across All 4 Projects) ──
 
     def get_config(self, config_key: str) -> str | None:

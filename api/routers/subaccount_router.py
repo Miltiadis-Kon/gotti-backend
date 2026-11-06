@@ -8,7 +8,8 @@ from models.client import (
     TransferCashRequest,
     FundSubAccountRequest,
     WithdrawSubAccountRequest,
-    TransactionRecordModel
+    TransactionRecordModel,
+    DailyPnLPointModel
 )
 from services.client_service import client_service
 from db.repository import repo
@@ -145,7 +146,8 @@ def withdraw_from_sub_account(sub_account_id: str, request: WithdrawSubAccountRe
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/transactions", response_model=list[TransactionRecordModel])
+@router.get("/transactions", response_model=list[TransactionRecordModel,
+    DailyPnLPointModel])
 def get_client_transactions(
     user_id: str = Query("usr-gotti-demo", description="Client user ID"),
     sub_account_id: str | None = Query(None, description="Filter by Sub-Account ID"),
@@ -158,5 +160,16 @@ def get_client_transactions(
             sub_account_id=sub_account_id,
             limit=limit
         )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/sub-accounts/{sub_account_id}/daily-pnl", response_model=list[DailyPnLPointModel])
+def get_sub_account_daily_pnl(sub_account_id: str):
+    """Get day-by-day realized PnL, cumulative performance, and daily volume for a sub-account."""
+    try:
+        return client_service.get_daily_pnl_for_sub_account(sub_account_id=sub_account_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

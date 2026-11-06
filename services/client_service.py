@@ -8,6 +8,8 @@ from models.client import (
     UserProfile,
     SubAccountModel,
     SubAccountWithHoldingsModel,
+    SubAccountMetrics,
+    DailyPnLPointModel,
     HoldingPositionModel,
     AggregatedFinancialsModel,
     TransactionRecordModel,
@@ -379,7 +381,18 @@ class ClientService:
             raise ValueError(f"Sub-account {sub_account_id} not found")
 
         strategy_info = ETF_STRATEGY_DETAILS.get(account.riskLevel, ETF_STRATEGY_DETAILS[3])
-        metrics = ETF_METRICS_MAP.get(account.riskLevel, ETF_METRICS_MAP[3])
+        metrics_base = ETF_METRICS_MAP.get(account.riskLevel, ETF_METRICS_MAP[3])
+        
+        # Calculate real dynamic win rate & trade ratio from MySQL orders
+        stats = repo.get_etf_win_rate_stats(account.riskLevel)
+        metrics = SubAccountMetrics(
+            sharpeRatio=metrics_base.sharpeRatio,
+            maxDrawdown=metrics_base.maxDrawdown,
+            volatilityBeta=metrics_base.volatilityBeta,
+            winRate=stats["winRate"],
+            tradeRatio=stats["tradeRatio"]
+        )
+
         holdings = self.calculate_sub_account_holdings(account)
 
         return SubAccountWithHoldingsModel(
@@ -389,20 +402,49 @@ class ClientService:
             metrics=metrics
         )
 
+    def get_daily_pnl_for_sub_account(self, sub_account_id: str) -> list[DailyPnLPointModel]:
+        """Fetch day-by-day PnL, trading volume, and trade counts for a sub-account."""
+        account = repo.get_sub_account(sub_account_id)
+        if not account:
+            raise ValueError(f"Sub-account {sub_account_id} not found")
+        rows = repo.get_daily_pnl_by_etf(account.riskLevel)
+        return [DailyPnLPointModel(**r) for r in rows]
+
     def calculate_sub_account_holdings(self, account: SubAccountModel) -> list[HoldingPositionModel]:
-        """Generate live holding allocations for a sub-account."""
-        # 1. If Alpaca paper account has live positions, fetch them dynamically
+        """Generate live holding allocations for a sub-account including active Alpaca positions and Cash liquidity."""
+        positions: list[HoldingPositionModel] = []
+        nav = float(account.currentValue) or float(account.allocatedCapital) or 100000.0
+
+        def get_sector(sym: str) -> str:
+            sym_upper = sym.upper()
+            if sym_upper in ("QQQ", "SPY", "VTI"):
+                return "Index ETF"
+            elif sym_upper in ("NVDA", "AAPL", "MSFT", "AMD", "ASML", "TSM"):
+                return "Information Technology"
+            elif sym_upper in ("GOOG", "GOOGL", "META", "NFLX", "CMCSA"):
+                return "Communication Services"
+            elif sym_upper in ("JPM", "BAC", "GS", "MS", "COIN"):
+                return "Financial Services"
+            elif sym_upper in ("AMZN", "TSLA", "HD", "MCD"):
+                return "Consumer Discretionary"
+            elif sym_upper in ("PG", "KO", "PEP", "COST", "WMT"):
+                return "Consumer Staples"
+            elif sym_upper in ("JNJ", "PFE", "UNH", "LLY", "ABBV"):
+                return "Healthcare"
+            elif sym_upper in ("XOM", "CVX", "COP", "BTE"):
+                return "Energy"
+            return "Alpha Momentum"
+
+        # 1. Fetch live open positions from Alpaca for this risk level
         try:
             from services.alpaca_client import alpaca_factory
             alp_positions = alpaca_factory.get_positions(account.riskLevel)
-            if alp_positions and len(alp_positions) > 0:
-                nav = float(account.currentValue) or sum(float(p.market_value) for p in alp_positions)
-                positions: list[HoldingPositionModel] = []
+            if alp_positions:
                 for p in alp_positions:
                     mkt_val = float(p.market_value)
                     unrealized_pl = float(p.unrealized_pl)
                     unrealized_plpc = float(p.unrealized_plpc) * 100.0
-                    weight = mkt_val / nav if nav > 0 else 0.0
+                    weight = abs(mkt_val) / nav if nav > 0 else 0.0
                     positions.append(
                         HoldingPositionModel(
                             ticker=p.symbol,
@@ -414,41 +456,32 @@ class ClientService:
                             unrealizedPnlPercentage=round(unrealized_plpc, 2),
                             currentPrice=round(float(p.current_price), 2),
                             sharesOwned=round(float(p.qty), 2),
-                            sector="High-Beta Alpha Execution",
+                            sector=get_sector(p.symbol),
                             isPositive=unrealized_pl >= 0
                         )
                     )
-                return positions
         except Exception as e:
-            logger.debug(f"Alpaca positions check notice for Level {account.riskLevel}: {e}")
+            logger.warning(f"Alpaca positions check notice for Level {account.riskLevel}: {e}")
 
-        # 2. Otherwise calculate target basket allocations against live NAV
-        strategy_info = ETF_STRATEGY_DETAILS.get(account.riskLevel, ETF_STRATEGY_DETAILS[3])
-        universe = strategy_info.get("holdings", [])
-        nav = account.currentValue
-
-        positions: list[HoldingPositionModel] = []
-        for idx, asset in enumerate(universe):
-            weight = asset["weight"]
-            allocated = round(nav * weight, 2)
-            base_price = asset.get("basePrice", 100.0)
-            shares = round(allocated / base_price, 2) if base_price > 0 else 0.0
-
-            positions.append(
-                HoldingPositionModel(
-                    ticker=asset["ticker"],
-                    name=asset["name"],
-                    weightPercentage=round(weight * 100, 1),
-                    weightDecimal=weight,
-                    allocatedAmount=allocated,
-                    unrealizedPnl=0.0,
-                    unrealizedPnlPercentage=0.0,
-                    currentPrice=base_price,
-                    sharesOwned=shares,
-                    sector=asset["sector"],
-                    isPositive=True
-                )
+        # 2. ALWAYS append Cash Reserves row so holdings represent 100% of portfolio
+        cash_val = max(0.0, float(account.cashBalance))
+        cash_weight = cash_val / nav if nav > 0 else (1.0 if not positions else 0.0)
+        positions.append(
+            HoldingPositionModel(
+                ticker="USD",
+                name="US Dollar Liquidity & Cash Reserves",
+                weightPercentage=round(cash_weight * 100, 1),
+                weightDecimal=round(cash_weight, 4),
+                allocatedAmount=round(cash_val, 2),
+                unrealizedPnl=0.0,
+                unrealizedPnlPercentage=0.0,
+                currentPrice=1.0,
+                sharesOwned=round(cash_val, 2),
+                sector="Cash & Equivalents",
+                isPositive=True
             )
+        )
+
         return positions
 
     def create_sub_account(self, user_id: str, risk_level: int, allocated_capital: float, custom_name: str | None = None) -> SubAccountModel:
