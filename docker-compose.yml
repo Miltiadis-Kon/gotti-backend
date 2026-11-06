@@ -21,7 +21,7 @@ services:
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-1234}
       MYSQL_DATABASE: ${DB_DATABASE:-gotti}
     ports:
-      - "3306:3306"
+      - "127.0.0.1:3306:3306"
     volumes:
       - "D:/Miltiadis/Database:/var/lib/mysql"
     healthcheck:
@@ -46,15 +46,15 @@ services:
       DB_HOST: mysql
       DB_PORT: 3306
       SA_WS_URL: ws://stock-alchemist:8080/ws/signals
-      LSEG_BRIDGE_URL: ${LSEG_BRIDGE_URL:-http://lseghost.dufercohellasgr.nordlayerconnect.net:5000/api/v1}
+      LSEG_BRIDGE_URL: ${LSEG_BRIDGE_URL:-http://lseghost2.dufercohellasgr.nordlayerconnect.net:5000/api/v1}
       LSEG_APP_KEY: ${LSEG_APP_KEY:-}
       CANDLE_COLLECTION_ENABLED: "true"
     depends_on:
       mysql:
         condition: service_healthy
     ports:
-      - "10000:10000"
-      - "8001:8001"
+      - "0.0.0.0:10000:10000"
+      - "0.0.0.0:8001:8001"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:10000/health"]
       interval: 20s
@@ -82,7 +82,7 @@ services:
       mysql:
         condition: service_healthy
     ports:
-      - "8080:8080"
+      - "0.0.0.0:8080:8080"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
       interval: 20s
@@ -111,7 +111,7 @@ services:
       mysql:
         condition: service_healthy
     ports:
-      - "8000:8000"
+      - "0.0.0.0:8000:8000"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
       interval: 20s
@@ -132,8 +132,11 @@ services:
     container_name: gotti-frontend-app
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "0.0.0.0:3000:3000"
     environment:
+      INTERNAL_BACKEND_URL: http://gotti-backend:10000
+      INTERNAL_VISUALIZE_URL: http://gotti-visualize:8000
+      INTERNAL_STOCK_ALCHEMIST_URL: http://stock-alchemist:8080
       NEXT_PUBLIC_API_URL: http://localhost:10000/api
       NEXT_PUBLIC_BACKEND_URL: http://localhost:10000
     depends_on:

@@ -41,7 +41,7 @@ class Settings:
     ))
     marketaux_api_token: str = field(default_factory=lambda: os.getenv('MARKETAUX_API_TOKEN', ''))
     lseg_enabled: bool = field(default_factory=lambda: os.getenv('LSEG_ENABLED', 'true').lower() == 'true')
-    lseg_bridge_url: str = field(default_factory=lambda: os.getenv('LSEG_BRIDGE_URL', 'http://lseghost.dufercohellasgr.nordlayerconnect.net:5000/api/v1'))
+    lseg_bridge_url: str = field(default_factory=lambda: os.getenv('LSEG_BRIDGE_URL', 'http://lseghost2.dufercohellasgr.nordlayerconnect.net:5000/api/v1'))
     lseg_backup_url: str = field(default_factory=lambda: os.getenv('LSEG_BACKUP_URL', 'http://127.0.0.1:5000/api/v1'))
     lseg_bridge_timeout: int = field(default_factory=lambda: int(os.getenv('LSEG_BRIDGE_TIMEOUT', '30')))
     lseg_app_key: str = field(default_factory=lambda: os.getenv('LSEG_APP_KEY', ''))

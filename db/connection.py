@@ -14,7 +14,7 @@ class ConnectionPool:
         """Create the connection pool. Call once at startup."""
         self._pool = pooling.MySQLConnectionPool(
             pool_name='gotti_pool',
-            pool_size=10,
+            pool_size=32,
             pool_reset_session=True,
             host=settings.db_host,
             port=settings.db_port,
@@ -35,7 +35,17 @@ class ConnectionPool:
         """Yield a connection from the pool with auto-commit/rollback."""
         if self._pool is None:
             raise RuntimeError('Connection pool not initialized. Call initialize() first.')
-        conn = self._pool.get_connection()
+        conn = None
+        for attempt in range(4):
+            try:
+                conn = self._pool.get_connection()
+                break
+            except mysql.connector.errors.PoolError as e:
+                if attempt < 3:
+                    import time
+                    time.sleep(0.15 * (attempt + 1))
+                else:
+                    raise e
         try:
             yield conn
             conn.commit()
@@ -43,7 +53,8 @@ class ConnectionPool:
             conn.rollback()
             raise
         finally:
-            conn.close()
+            if conn:
+                conn.close()
 
     @contextmanager
     def get_cursor(self, dictionary: bool = True):

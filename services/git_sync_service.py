@@ -47,21 +47,58 @@ def run_git_cmd(repo_path: Path, args: List[str], timeout: int = 30) -> subproce
 
 
 def run_docker_compose_reload(compose_dir: Path, service_name: str, timeout: int = 300) -> bool:
-    """Rebuild and restart a specific Docker container service."""
-    cmd = ["docker", "compose", "up", "-d", "--build", service_name]
-    try:
-        res = subprocess.run(
-            cmd,
-            cwd=str(compose_dir),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False
-        )
-        return res.returncode == 0
-    except Exception as e:
-        print(f"[ERROR] Failed to run docker compose reload for {service_name}: {e}")
-        return False
+    """Rebuild and restart a specific Docker container service via CLI or unix socket."""
+    import shutil
+    import socket
+    import http.client
+
+    # 1. Try docker compose CLI if available
+    if shutil.which("docker"):
+        cmd = ["docker", "compose", "up", "-d", "--build", service_name]
+        try:
+            res = subprocess.run(
+                cmd,
+                cwd=str(compose_dir),
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False
+            )
+            if res.returncode == 0:
+                return True
+        except Exception as e:
+            print(f"[WARN] Failed to run docker compose reload for {service_name}: {e}")
+
+    # 2. Fallback to /var/run/docker.sock restart if available
+    if os.path.exists("/var/run/docker.sock"):
+        container_map = {
+            "gotti-backend": "gotti-backend-api",
+            "stock-alchemist": "stock-alchemist-app",
+            "gotti-visualize": "gotti-visualize-api",
+            "gotti-frontend": "gotti-frontend-app",
+            "mysql": "gotti-mysql"
+        }
+        target = container_map.get(service_name, service_name)
+        try:
+            class _SockConn(http.client.HTTPConnection):
+                def __init__(self, s_path="/var/run/docker.sock", t=10):
+                    super().__init__("localhost", timeout=t)
+                    self.s_path = s_path
+                def connect(self):
+                    self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                    self.sock.settimeout(self.timeout)
+                    self.sock.connect(self.s_path)
+
+            conn = _SockConn(t=min(timeout, 30))
+            conn.request("POST", f"/containers/{target}/restart?t=5")
+            resp = conn.getresponse()
+            conn.close()
+            return resp.status in (200, 204)
+        except Exception as e:
+            print(f"[ERROR] Failed to restart container {target} via unix socket: {e}")
+            return False
+
+    return False
 
 
 class GitSyncManager:

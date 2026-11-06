@@ -56,14 +56,20 @@
                 <span>API Swagger</span>
                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
             </a>
-            <a href="http://localhost:8080/" target="_blank" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-dark-hover hover:bg-dark-border border border-dark-border text-dark-text transition-colors">
+            <a href="#" data-port="8080" data-path="/" target="_blank" class="ecosystem-link px-3 py-1.5 rounded-lg text-xs font-medium bg-dark-hover hover:bg-dark-border border border-dark-border text-dark-text transition-colors">
                 Stock Alchemist
             </a>
-            <a href="http://localhost:8000/chart" target="_blank" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-dark-hover hover:bg-dark-border border border-dark-border text-dark-text transition-colors">
-                Gotti Visualize
+            <a href="#" data-port="8000" data-path="/chart" target="_blank" class="ecosystem-link px-3 py-1.5 rounded-lg text-xs font-medium bg-dark-hover hover:bg-dark-border border border-dark-border text-cyan-400 transition-colors">
+                Key Levels Chart
             </a>
-            <a href="http://localhost:3000/" target="_blank" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition-colors">
+            <a href="#" data-port="8000" data-path="/strategies" target="_blank" class="ecosystem-link px-3 py-1.5 rounded-lg text-xs font-medium bg-dark-hover hover:bg-dark-border border border-dark-border text-cyan-300 transition-colors">
+                Strategy Hub
+            </a>
+            <a href="#" data-port="3000" data-path="/" target="_blank" class="ecosystem-link px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition-colors">
                 Client App
+            </a>
+            <a href="#" data-port="5000" data-path="/" target="_blank" class="ecosystem-link px-3 py-1.5 rounded-lg text-xs font-medium bg-dark-hover hover:bg-dark-border border border-dark-border text-emerald-400 transition-colors">
+                Grams
             </a>
         </div>
     </header>
@@ -407,7 +413,16 @@
             `;
         }
 
+        function initEcosystemLinks() {
+            document.querySelectorAll('.ecosystem-link[data-port]').forEach(el => {
+                const port = el.getAttribute('data-port');
+                const path = el.getAttribute('data-path') || '/';
+                el.href = `${window.location.protocol}//${window.location.hostname}:${port}${path}`;
+            });
+        }
+
         window.addEventListener('DOMContentLoaded', () => {
+            initEcosystemLinks();
             quickEvaluate('NVDA');
         });
     </script>

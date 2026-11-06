@@ -66,7 +66,7 @@ class LSEGCandleClient:
         """Return list of candidate base endpoints to query in priority order."""
         candidates = [
             self.primary_url,
-            "http://lseghost.dufercohellasgr.nordlayerconnect.net:5000/api/v1",
+            "http://lseghost2.dufercohellasgr.nordlayerconnect.net:5000/api/v1",
             self.backup_url,
             "http://127.0.0.1:5000/api/v1",
         ]

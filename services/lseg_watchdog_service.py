@@ -89,20 +89,29 @@ class LSEGWatchdogService:
             self.consecutive_failures += 1
             self.latency_ms = 0.0
             self.last_error = "Connection timed out (VPN tunnel may be degraded or offline)"
-            logger.error(f"[LSEG WATCHDOG] Timeout reaching {self.health_url} ({self.consecutive_failures} failures)")
+            if self.consecutive_failures == 1 or self.consecutive_failures % 30 == 0:
+                logger.error(f"[LSEG WATCHDOG] Timeout reaching {self.health_url} ({self.consecutive_failures} failures)")
+            else:
+                logger.debug(f"[LSEG WATCHDOG] Timeout reaching {self.health_url} ({self.consecutive_failures} failures)")
 
         except requests.exceptions.ConnectionError as e:
             self.status = "OFFLINE"
             self.consecutive_failures += 1
             self.latency_ms = 0.0
             self.last_error = f"Connection refused (NordLayer VPN tunnel is likely down): {e}"
-            logger.error(f"[LSEG WATCHDOG] Connection error: {self.last_error}")
+            if self.consecutive_failures == 1 or self.consecutive_failures % 30 == 0:
+                logger.error(f"[LSEG WATCHDOG] Connection error: {self.last_error}")
+            else:
+                logger.debug(f"[LSEG WATCHDOG] Connection error: {self.last_error}")
 
         except Exception as e:
             self.status = "OFFLINE"
             self.consecutive_failures += 1
             self.last_error = str(e)
-            logger.error(f"[LSEG WATCHDOG] Unexpected probe error: {e}")
+            if self.consecutive_failures == 1 or self.consecutive_failures % 30 == 0:
+                logger.error(f"[LSEG WATCHDOG] Unexpected probe error: {e}")
+            else:
+                logger.debug(f"[LSEG WATCHDOG] Unexpected probe error: {e}")
 
         return self.get_status()
 

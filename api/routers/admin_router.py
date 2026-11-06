@@ -121,41 +121,108 @@ def trigger_git_sync(auto_reload: bool = True):
         raise HTTPException(status_code=500, detail=f"Git sync failed: {str(e)}")
 
 
+import socket
+import http.client
+
+
+class _UnixHTTPConnection(http.client.HTTPConnection):
+    def __init__(self, socket_path: str = "/var/run/docker.sock", timeout: int = 5):
+        super().__init__("localhost", timeout=timeout)
+        self.socket_path = socket_path
+
+    def connect(self):
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.settimeout(self.timeout)
+        self.sock.connect(self.socket_path)
+
+
+def _decode_docker_log_stream(raw_bytes: bytes) -> str:
+    if not raw_bytes:
+        return ""
+    output = []
+    i = 0
+    n = len(raw_bytes)
+    while i + 8 <= n:
+        stream_type = raw_bytes[i]
+        if stream_type in (1, 2) and raw_bytes[i + 1 : i + 4] == b"\x00\x00\x00":
+            frame_len = int.from_bytes(raw_bytes[i + 4 : i + 8], byteorder="big")
+            frame = raw_bytes[i + 8 : i + 8 + frame_len]
+            output.append(frame.decode("utf-8", errors="replace"))
+            i += 8 + frame_len
+        else:
+            return raw_bytes.decode("utf-8", errors="replace")
+    return "".join(output) if output else raw_bytes.decode("utf-8", errors="replace")
+
+
 @router.get('/system-logs')
 def get_system_logs(lines: int = 50):
     """
-    Fetch the running status and recent logs for all 4 microservices via Docker.
-    Requires docker socket to be mounted.
+    Fetch the running status and recent logs for all 5 microservices via Docker.
+    Uses /var/run/docker.sock directly with fallback to docker CLI if present.
     """
-    import subprocess
     import os
-    
-    services = ["gotti-backend-api", "stock-alchemist-app", "gotti-visualize-api", "gotti-frontend-app", "gotti-mysql"]
+    import json
+    import shutil
+    import subprocess
+
+    services = [
+        "gotti-backend-api",
+        "stock-alchemist-app",
+        "gotti-visualize-api",
+        "gotti-frontend-app",
+        "gotti-mysql",
+    ]
     results = []
-    
+
+    has_socket = os.path.exists("/var/run/docker.sock")
+
     for srv in services:
-        status_cmd = ["docker", "inspect", "-f", "{{.State.Status}}", srv]
-        try:
-            status = subprocess.check_output(status_cmd, text=True, timeout=5).strip()
-        except Exception:
-            status = "not running"
-            
+        status = "not running"
         logs = ""
-        if status == "running":
-            log_cmd = ["docker", "logs", "--tail", str(lines), srv]
+
+        if has_socket:
             try:
-                logs_raw = subprocess.check_output(log_cmd, stderr=subprocess.STDOUT, text=True, timeout=5)
-                # Take last N lines
-                logs = "\n".join(logs_raw.splitlines()[-lines:])
-            except Exception as e:
-                logs = f"Error reading logs: {str(e)}"
-                
+                conn = _UnixHTTPConnection("/var/run/docker.sock", timeout=5)
+                conn.request("GET", f"/containers/{srv}/json")
+                resp = conn.getresponse()
+                if resp.status == 200:
+                    info = json.loads(resp.read().decode("utf-8"))
+                    status = info.get("State", {}).get("Status", "unknown")
+                conn.close()
+
+                if status == "running":
+                    conn = _UnixHTTPConnection("/var/run/docker.sock", timeout=5)
+                    conn.request("GET", f"/containers/{srv}/logs?stdout=1&stderr=1&tail={lines}")
+                    resp = conn.getresponse()
+                    if resp.status == 200:
+                        raw_logs = resp.read()
+                        logs = _decode_docker_log_stream(raw_logs).strip()
+                    conn.close()
+            except Exception:
+                pass
+
+        # Fallback to docker CLI if socket didn't return running and docker binary exists
+        if status == "not running" and shutil.which("docker"):
+            try:
+                status_cmd = ["docker", "inspect", "-f", "{{.State.Status}}", srv]
+                status = subprocess.check_output(status_cmd, text=True, timeout=5).strip()
+            except Exception:
+                status = "not running"
+
+            if status == "running":
+                try:
+                    log_cmd = ["docker", "logs", "--tail", str(lines), srv]
+                    logs_raw = subprocess.check_output(log_cmd, stderr=subprocess.STDOUT, text=True, timeout=5)
+                    logs = "\n".join(logs_raw.splitlines()[-lines:])
+                except Exception as e:
+                    logs = f"Error reading logs: {str(e)}"
+
         results.append({
             "service": srv,
             "status": status,
-            "logs": logs
+            "logs": logs,
         })
-        
+
     return {"services": results}
 
 

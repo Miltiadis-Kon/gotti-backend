@@ -182,9 +182,21 @@ app = FastAPI(
 )
 
 # ── CORS middleware ──────────────────────────────────────────
+ALLOWED_ORIGIN_REGEX = (
+    r"^https?://("
+    r"localhost|"
+    r"127\.0\.0\.1|"
+    r"10\.\d{1,3}\.\d{1,3}\.\d{1,3}|"
+    r"172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}|"
+    r"192\.168\.\d{1,3}\.\d{1,3}|"
+    r".*\.dufercohellasgr\.nordlayerconnect\.net|"
+    r".*\.nordlayerconnect\.net"
+    r")(:\d+)?$"
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origin_regex=ALLOWED_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -209,10 +221,15 @@ app.include_router(admin_router, prefix="/api")
 app.include_router(candles_router, prefix="/api")
 
 
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 import os
 
 _evaluate_html_path = os.path.join(os.path.dirname(__file__), "templates", "evaluate.html")
+
+@app.get("/")
+def root_redirect():
+    """Redirect root to the Ticker Risk & Earnings Evaluator Dashboard."""
+    return RedirectResponse(url="/evaluate")
 
 @app.get("/evaluate", response_class=HTMLResponse)
 @app.get("/ticker-evaluator", response_class=HTMLResponse)
