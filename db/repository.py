@@ -576,13 +576,19 @@ class Repository:
 
     # ── Orders History Operations ────────────────────────────────────
 
-    def get_orders(self, limit: int = 100) -> list[OrderDataModel]:
-        """Fetch trade order history."""
+    def get_orders(self, limit: int = 100, etf_level: int | None = None) -> list[OrderDataModel]:
+        """Fetch trade order history with optional ETF level filtering."""
         with pool.get_cursor() as cursor:
-            cursor.execute(
-                'SELECT * FROM orders ORDER BY id DESC LIMIT %s',
-                (limit,)
-            )
+            if etf_level is not None:
+                cursor.execute(
+                    'SELECT * FROM orders WHERE etf_level = %s ORDER BY id DESC LIMIT %s',
+                    (etf_level, limit)
+                )
+            else:
+                cursor.execute(
+                    'SELECT * FROM orders ORDER BY id DESC LIMIT %s',
+                    (limit,)
+                )
             rows = cursor.fetchall()
             return [
                 OrderDataModel(
@@ -590,6 +596,7 @@ class Repository:
                     date=r["order_date"],
                     symbol=r["symbol"],
                     name=r["name"],
+                    etfLevel=r.get("etf_level") or 3,
                     status=r["status"],
                     buyPrice=float(r["buy_price"]) if r["buy_price"] is not None else "-",
                     sellPrice=float(r["sell_price"]) if r["sell_price"] is not None else "-",
@@ -603,15 +610,16 @@ class Repository:
 
     def create_order(self, order_date: str, symbol: str, name: str, status: str,
                      buy_price: float | None, sell_price: float | None, profit: float | None,
-                     order_amount: float, total_amount: float, order_type: str) -> int:
+                     order_amount: float, total_amount: float, order_type: str,
+                     etf_level: int = 3) -> int:
         """Insert a trade order into orders."""
         with pool.get_cursor() as cursor:
             cursor.execute(
                 '''INSERT INTO orders
-                   (order_date, symbol, name, status, buy_price, sell_price,
+                   (order_date, symbol, name, etf_level, status, buy_price, sell_price,
                     profit, order_amount, total_amount, order_type)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)''',
-                (order_date, symbol, name, status, buy_price, sell_price,
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)''',
+                (order_date, symbol, name, etf_level, status, buy_price, sell_price,
                  profit, order_amount, total_amount, order_type)
             )
             return cursor.lastrowid

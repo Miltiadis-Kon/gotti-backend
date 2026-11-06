@@ -1,5 +1,6 @@
 import json
 from datetime import datetime, timezone
+from typing import Optional
 import yfinance as yf
 from db.repository import repo
 from models.order import OrderDataModel
@@ -51,9 +52,9 @@ class StockDataService:
 
         return json.dumps({"Close": close_dict})
 
-    def get_orders_list(self, limit: int = 50) -> list[OrderDataModel]:
-        """Fetch orders from the repository."""
-        return repo.get_orders(limit=limit)
+    def get_orders_list(self, limit: int = 50, etf_level: Optional[int] = None) -> list[OrderDataModel]:
+        """Fetch orders from the repository with optional ETF level filtering."""
+        return repo.get_orders(limit=limit, etf_level=etf_level)
 
 
 # Singleton stock data service instance

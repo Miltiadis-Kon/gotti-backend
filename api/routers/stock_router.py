@@ -1,3 +1,4 @@
+from typing import Optional
 from fastapi import APIRouter, Query, Response
 from models.order import OrderDataModel
 from services.stock_data_service import stock_data_service
@@ -21,6 +22,9 @@ def get_stock_data(
 
 
 @router.get("/orders", response_model=list[OrderDataModel])
-def get_orders_history(limit: int = Query(50, le=200)):
-    """Fetch order execution history for the orders table."""
-    return stock_data_service.get_orders_list(limit=limit)
+def get_orders_history(
+    limit: int = Query(50, le=200),
+    etf_level: Optional[int] = Query(None, description="Filter by ETF level (1, 2, 3)")
+):
+    """Fetch order execution history for the orders table with optional ETF level filtering."""
+    return stock_data_service.get_orders_list(limit=limit, etf_level=etf_level)
