@@ -146,8 +146,7 @@ def withdraw_from_sub_account(sub_account_id: str, request: WithdrawSubAccountRe
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/transactions", response_model=list[TransactionRecordModel,
-    DailyPnLPointModel])
+@router.get("/transactions", response_model=list[TransactionRecordModel])
 def get_client_transactions(
     user_id: str = Query("usr-gotti-demo", description="Client user ID"),
     sub_account_id: str | None = Query(None, description="Filter by Sub-Account ID"),
